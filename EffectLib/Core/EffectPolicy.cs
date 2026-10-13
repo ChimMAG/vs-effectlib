@@ -18,6 +18,7 @@ namespace EffectLib
     public static class EffectPolicy
     {
         private static Func<string, bool> gate;
+        private static bool loggedGateError;
 
         public static void SetGate(Func<string, bool> allow) => gate = allow;
 
@@ -31,8 +32,16 @@ namespace EffectLib
             {
                 return allow(capability);
             }
-            catch
+            catch (Exception err)
             {
+                if (!loggedGateError)
+                {
+                    loggedGateError = true;
+                    EffectRegistry.Logger?.Error(
+                        "[EffectLib] The capability gate threw, so every capability is allowed: {0}",
+                        err
+                    );
+                }
                 return true;
             }
         }

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Common;
-using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.Server;
 
@@ -14,19 +13,21 @@ namespace EffectLib
         public const string ColdResist = "effectlib:coldResist";
         public const string CanFly = "effectlib:canFly";
         public const string CanClimb = "effectlib:canClimb";
+        public const string NoClimb = "effectlib:noClimb";
+        public const string ClimbReach = "effectlib:climbReach";
         public const string GlowStrength = "effectlib:glowStrength";
         public const string NoGravity = "effectlib:noGravity";
     }
 
     public sealed class EffectManager(EntityPlayer entity)
     {
-        public const string PersistKey = "alchemyEffects";
+        public const string PersistKey = "effectlib:effects";
 
         private readonly EntityPlayer entity = entity;
         private readonly ICoreAPI api = entity.Api;
-        private readonly Dictionary<string, ActiveEffect> active = [];
+        private readonly Dictionary<string, ActiveEffect> active = new(StringComparer.OrdinalIgnoreCase);
 
-        private readonly HashSet<string> pendingInstant = [];
+        private readonly HashSet<string> pendingInstant = new(StringComparer.OrdinalIgnoreCase);
 
         private float? baselineFallDamageMultiplier;
         private bool? baselineFallDamage;
@@ -82,10 +83,7 @@ namespace EffectLib
                 return true;
 
             return EffectPolicy.IsAllowed(EffectCapability.Refresh)
-                && !(
-                    activeEffect.Effect.Context.TickSec > 0
-                    && Math.Abs(activeEffect.Effect.Context.Health) > float.Epsilon
-                );
+                && !TicksHealth(activeEffect.Effect.Context);
         }
 
         public bool TryApply(string id, EffectContext ctx, string name, bool resume = false)
@@ -94,28 +92,20 @@ namespace EffectLib
             {
                 if (IsActive(id) || pendingInstant.Contains(id))
                 {
-                    if (CanRefresh(id))
+                    if (!CanRefresh(id))
                     {
-                        RemoveEffect(id, false);
-                    }
-                    else
-                    {
-                        api.Logger.Debug(
-                            "Cannot apply effect {0}, it is currently already applied!",
-                            id
-                        );
+                        api.Logger.Debug("[EffectLib] Cannot apply effect {0}, it is already active.", id);
                         return false;
                     }
+
+                    RemoveEffect(id, false);
                 }
 
                 if (ctx.ExclusivityGroup != null)
                 {
                     foreach (
                         string otherId in active.Keys
-                            .Where(otherId =>
-                                otherId != id
-                                && active[otherId].Effect.Context.ExclusivityGroup == ctx.ExclusivityGroup
-                            )
+                            .Where(otherId => active[otherId].Effect.Context.ExclusivityGroup == ctx.ExclusivityGroup)
                             .ToList()
                     )
                         RemoveEffect(otherId);
@@ -125,49 +115,35 @@ namespace EffectLib
                 effect.Apply(entity, resume);
 
                 if (!resume)
-                {
                     EffectHandlers.Applied(entity, id, ctx, api.Logger);
-                }
 
-                if (effect.Context.Duration == 0)
+                if (ctx.Duration == 0)
                 {
                     pendingInstant.Add(id);
-                    entity.World.RegisterCallback(dt => pendingInstant.Remove(id), 500);
+                    entity.World.RegisterCallback(_ => pendingInstant.Remove(id), 500);
                     return true;
                 }
 
-                bool endless = effect.Context.IsEndless;
-                bool tickingHealth =
-                    effect.Context.TickSec > 0 && Math.Abs(effect.Context.Health) > float.Epsilon;
-
-                long handle = 0;
-                bool ticking = false;
-
-                if (endless && tickingHealth)
-                {
-                    ticking = true;
-                    handle = entity.World.RegisterGameTickListener(
+                long tickListenerId = 0;
+                if (ctx.IsEndless && TicksHealth(ctx))
+                    tickListenerId = entity.World.RegisterGameTickListener(
                         _ => effect.ApplyHealthTick(entity),
-                        (int)Math.Max(1, effect.Context.TickSec * 1000)
+                        (int)Math.Max(1, ctx.TickSec * 1000)
                     );
-                }
-                else if (effect.Context.RepeatSec > 0)
-                {
-                    ticking = true;
-                    handle = entity.World.RegisterGameTickListener(
+                else if (ctx.RepeatSec > 0)
+                    tickListenerId = entity.World.RegisterGameTickListener(
                         _ => RepeatTick(id),
-                        (int)Math.Max(1, effect.Context.RepeatSec * 1000)
+                        (int)Math.Max(1, ctx.RepeatSec * 1000)
                     );
-                }
-                else if (!endless)
-                {
-                    handle = entity.World.RegisterCallback(
-                        dt => RemoveEffect(id),
-                        effect.Context.Duration * 1000
-                    );
-                }
 
-                active[id] = new ActiveEffect(effect, handle, ticking, name)
+                long expiryCallbackId = ctx.IsEndless
+                    ? 0
+                    : entity.World.RegisterCallback(
+                        _ => RemoveEffect(id, notify: true, expired: true),
+                        (int)Math.Min(int.MaxValue, ctx.Duration * 1000L)
+                    );
+
+                active[id] = new ActiveEffect(effect, tickListenerId, expiryCallbackId, name)
                 {
                     ApplyMs = entity.World.ElapsedMilliseconds,
                 };
@@ -178,72 +154,64 @@ namespace EffectLib
             }
             catch (Exception err)
             {
-                api.Logger.Error("Effect {0} could not be applied. An error occurred", id);
+                api.Logger.Error("[EffectLib] Effect {0} could not be applied. An error occurred", id);
                 api.Logger.Error(err);
                 return false;
             }
         }
 
-        public void RemoveEffect(string id, bool notify = true)
+        public void RemoveEffect(string id, bool notify = true) => RemoveEffect(id, notify, expired: false);
+
+        private void RemoveEffect(string id, bool notify, bool expired)
         {
             if (!active.TryGetValue(id, out ActiveEffect activeEffect))
                 return;
 
-            if (notify && activeEffect.Effect.Context.Notify)
-            {
-                IServerPlayer serverPlayer = entity?.Player as IServerPlayer;
-                serverPlayer?.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    EffectLang.Get(id, "effect-lose", activeEffect.DisplayName),
-                    EnumChatType.Notification
+            string key = activeEffect.Effect.EffectId;
+            EffectContext ctx = activeEffect.Effect.Context;
+
+            if (notify && ctx.Notify)
+                EffectLang.SendFor(
+                    entity.Player as IServerPlayer,
+                    EffectRegistry.DomainOf(key),
+                    "effect-lose",
+                    activeEffect.DisplayName
                 );
-            }
 
-            if (activeEffect.ListenerId != 0)
-            {
-                if (activeEffect.IsTicking)
-                    entity.World.UnregisterGameTickListener(activeEffect.ListenerId);
-                else
-                    entity.World.UnregisterCallback(activeEffect.ListenerId);
-            }
+            UnregisterTimers(activeEffect);
+            activeEffect.Effect.Remove(entity, stopDamageOverTime: !expired);
 
-            activeEffect.Effect.Remove(entity);
-
-            active.Remove(id);
-            pendingInstant.Remove(id);
+            active.Remove(key);
+            pendingInstant.Remove(key);
 
             ITreeAttribute tree = entity.WatchedAttributes.GetTreeAttribute(PersistKey);
             if (tree != null)
             {
-                tree.RemoveAttribute(id);
+                tree.RemoveAttribute(key);
                 entity.WatchedAttributes.MarkPathDirty(PersistKey);
             }
 
-            EffectHandlers.Removed(entity, id, activeEffect.Effect.Context, api.Logger);
+            EffectHandlers.Removed(entity, key, ctx, api.Logger);
 
             RefreshEffectState();
         }
 
         private void RepeatTick(string id)
         {
-            if (!active.TryGetValue(id, out ActiveEffect activeEffect))
-                return;
-
-            EffectContext ctx = activeEffect.Effect.Context;
-            if (!ctx.IsEndless)
-            {
-                int elapsedSec = (int)(
-                    (entity.World.ElapsedMilliseconds - activeEffect.ApplyMs) / 1000
-                );
-                if (elapsedSec >= ctx.Duration)
-                {
-                    RemoveEffect(id);
-                    return;
-                }
-            }
-
-            EffectHandlers.Applied(entity, id, ctx, api.Logger);
+            if (active.TryGetValue(id, out ActiveEffect activeEffect))
+                EffectHandlers.Applied(entity, id, activeEffect.Effect.Context, api.Logger);
         }
+
+        private void UnregisterTimers(ActiveEffect activeEffect)
+        {
+            if (activeEffect.TickListenerId != 0)
+                entity.World.UnregisterGameTickListener(activeEffect.TickListenerId);
+            if (activeEffect.ExpiryCallbackId != 0)
+                entity.World.UnregisterCallback(activeEffect.ExpiryCallbackId);
+        }
+
+        private static bool TicksHealth(EffectContext ctx) =>
+            ctx.TickSec > 0 && Math.Abs(ctx.Health) > float.Epsilon;
 
         public void Purge(EffectPurge scope)
         {
@@ -287,14 +255,7 @@ namespace EffectLib
             foreach (KeyValuePair<string, ActiveEffect> pair in active)
             {
                 ActiveEffect activeEffect = pair.Value;
-
-                if (activeEffect.ListenerId != 0)
-                {
-                    if (activeEffect.IsTicking)
-                        entity.World.UnregisterGameTickListener(activeEffect.ListenerId);
-                    else
-                        entity.World.UnregisterCallback(activeEffect.ListenerId);
-                }
+                UnregisterTimers(activeEffect);
 
                 int remainingSec = activeEffect.Effect.Context.IsEndless
                     ? EffectContext.EndlessDuration
@@ -381,42 +342,9 @@ namespace EffectLib
                 entity.WatchedAttributes.MarkPathDirty(PersistKey);
             }
 
-            CleanStaleState();
-        }
-
-        private void CleanStaleState()
-        {
-            RemoveIfPresent(LegacyGlowStrength);
-            CleanLegacyHandleKeys();
-
             RefreshEffectState();
             EffectHandlers.Restored(entity, api.Logger);
         }
-
-        private void CleanLegacyHandleKeys()
-        {
-            List<string> legacy =
-            [
-                .. entity.WatchedAttributes.Keys.Where(key =>
-                    key != PersistKey
-                    && key.EndsWith("potionid", StringComparison.OrdinalIgnoreCase)
-                ),
-            ];
-
-            foreach (string key in legacy)
-            {
-                entity.WatchedAttributes.RemoveAttribute(key);
-            }
-
-            if (legacy.Count > 0)
-                api.Logger.Notification(
-                    "[EffectLib] Cleared {0} legacy effect key(s) from {1}.",
-                    legacy.Count,
-                    entity.Player?.PlayerName ?? entity.EntityId.ToString()
-                );
-        }
-
-        private const string LegacyGlowStrength = "glowStrength";
 
         private void RefreshEffectState()
         {
@@ -464,9 +392,14 @@ namespace EffectLib
             SetEffectBool(EffectAttr.WaterBreathe, waterBreathe);
             SetEffectBool(EffectAttr.ColdResist, coldResist);
             SetEffectBool(EffectAttr.CanFly, canFly);
-            SetEffectBool(EffectAttr.CanClimb, canClimb);
-            SetEffectBool(EffectAttr.NoGravity, noGravity);
             SetEffectInt(EffectAttr.GlowStrength, glowStrength);
+
+            // Player movement is simulated client-side, so these are mirrored there too - see
+            // PlayerPhysicsSync.
+            SetEffectBool(EffectAttr.CanClimb, canClimb);
+            SetEffectBool(EffectAttr.NoClimb, disableClimbing);
+            SetEffectFloat(EffectAttr.ClimbReach, climbTouchDistance);
+            SetEffectBool(EffectAttr.NoGravity, noGravity);
 
             SyncFallDamage(fallDamageReduction);
             SyncClimbing(canClimb);
@@ -628,6 +561,14 @@ namespace EffectLib
                 entity.WatchedAttributes.SetInt(key, value);
         }
 
+        private void SetEffectFloat(string key, float value)
+        {
+            if (Math.Abs(value) <= float.Epsilon && !entity.WatchedAttributes.HasAttribute(key))
+                return;
+            if (Math.Abs(entity.WatchedAttributes.GetFloat(key) - value) > float.Epsilon)
+                entity.WatchedAttributes.SetFloat(key, value);
+        }
+
         private void RemoveIfPresent(string key)
         {
             if (entity.WatchedAttributes.HasAttribute(key))
@@ -691,8 +632,8 @@ namespace EffectLib
 
     internal sealed record ActiveEffect(
         AppliedEffect Effect,
-        long ListenerId,
-        bool IsTicking,
+        long TickListenerId,
+        long ExpiryCallbackId,
         string DisplayName
     )
     {

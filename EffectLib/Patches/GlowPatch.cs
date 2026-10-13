@@ -1,6 +1,7 @@
 using System;
 using HarmonyLib;
 using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 
 #pragma warning disable IDE0130
 namespace EffectLib
@@ -16,10 +17,14 @@ namespace EffectLib
         public static void Postfix(EntityPlayer __instance, ref byte[] __result)
         {
             int glowStrength = __instance.WatchedAttributes.GetInt(EffectAttr.GlowStrength);
-            if (glowStrength <= 0)
+            if (glowStrength <= 0 || __instance.Player?.WorldData.CurrentGameMode == EnumGameMode.Spectator)
                 return;
 
-            __result = [0, 0, (byte)Math.Clamp(glowStrength, 0, MaxGlowStrength)];
+            // Merged, so a held light brighter than the glow isn't dimmed by it.
+            __result = ColorUtil.MergeLightHSV(
+                __result,
+                [0, 0, (byte)Math.Clamp(glowStrength, 0, MaxGlowStrength)]
+            );
         }
     }
 }

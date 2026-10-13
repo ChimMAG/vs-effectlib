@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Reflection;
 
@@ -41,6 +42,18 @@ namespace EffectLib
         public bool AllowRefresh { get; set; } = true;
         public bool AllowResize { get; set; } = true;
 
+        // A hand-edited file can hold values the ConfigLib ranges would never allow so I clamp everything
+        public void Clamp()
+        {
+            CarryScanDelaySec = Math.Max(0f, CarryScanDelaySec);
+            CarrySafetyNetIntervalSec = Math.Max(1f, CarrySafetyNetIntervalSec);
+            CarryDurabilityCheckIntervalSec = Math.Max(1f, CarryDurabilityCheckIntervalSec);
+            MinPlayerHeight = Math.Max(0.05f, MinPlayerHeight);
+            MaxPlayerHeight = Math.Max(MinPlayerHeight, MaxPlayerHeight);
+            CoatableWeaponTags ??= "";
+            CoatableProjectilesCodes ??= "";
+        }
+
         public EffectLibConfigSyncPacket ToSyncPacket()
         {
             EffectLibConfigSyncPacket packet = new();
@@ -79,6 +92,7 @@ namespace EffectLib
                     prop.SetValue(this, s);
             }
 
+            Clamp();
             CoatingPolicy.InvalidateCaches();
         }
     }

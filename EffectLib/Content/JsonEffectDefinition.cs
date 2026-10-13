@@ -16,6 +16,7 @@ namespace EffectLib
 
             ctx.ResetsEffects = def["resetsEffects"].AsBool();
             ctx.ReplaceIfActive = def["replaceIfActive"].AsBool();
+            ctx.Notify = def["notify"].AsBool(true);
             ctx.Duration = def["duration"].AsInt();
             if (ctx.Duration < 0)
                 ctx.Duration = EffectContext.EndlessDuration;
@@ -123,6 +124,27 @@ namespace EffectLib
             return true;
         }
 
+        public static bool TryResolve(
+            CollectibleObject content,
+            string attributeKey,
+            string idField,
+            out string effectId
+        )
+        {
+            JsonObject def = content?.Attributes?[attributeKey];
+            effectId = EffectIds.Read(def, idField, content);
+            if (string.IsNullOrWhiteSpace(effectId))
+            {
+                effectId = null;
+                return false;
+            }
+
+            if (!EffectRegistry.IsReserved(effectId) && !EffectRegistry.IsRegistered(effectId, content.Code))
+                RegisterFrom(effectId, content.Code.Domain, def, content.Code);
+
+            return true;
+        }
+
         public static void RegisterFrom(
             string effectId,
             string domain,
@@ -139,7 +161,6 @@ namespace EffectLib
             EffectBuilder afterApply
         )
         {
-            JsonObject definition = def;
             string[] channels = def["channels"].AsArray<string>(null);
             string exclusivityGroup = def["exclusivityGroup"].AsString();
 
@@ -152,7 +173,7 @@ namespace EffectLib
                 effectId,
                 ctx =>
                 {
-                    Apply(ctx, definition, domain);
+                    Apply(ctx, def, domain);
                     afterApply?.Invoke(ctx);
                 },
                 domain,

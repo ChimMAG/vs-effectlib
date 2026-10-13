@@ -15,6 +15,7 @@ namespace EffectLib
         public override void Initialize(JsonObject properties)
         {
             base.Initialize(properties);
+            sound = properties["sound"].AsString("drink");
             consumeLitres = properties["consumeLitres"].AsFloat(0.25f);
             checkLitres = properties["checkLitres"].AsFloat(0.25f);
         }
@@ -34,29 +35,9 @@ namespace EffectLib
             out float durationMul
         )
         {
-            effectId = null;
             potencyMul = 1f;
             durationMul = 1f;
-
-            CollectibleObject content = ContentOf(slot);
-            if (content == null)
-                return false;
-
-            JsonObject def = content.Attributes?[attributeKey];
-            if (def?.Exists != true)
-                return false;
-
-            effectId = EffectIds.Read(def, idField, content);
-            if (string.IsNullOrWhiteSpace(effectId))
-            {
-                effectId = null;
-                return false;
-            }
-
-            if (!EffectRegistry.IsRegistered(effectId, content.Code))
-                JsonEffectDefinition.RegisterFrom(effectId, content.Code.Domain, def, content.Code);
-
-            return true;
+            return JsonEffectDefinition.TryResolve(ContentOf(slot), attributeKey, idField, out effectId);
         }
 
         protected override bool HasEnoughSource(ItemSlot slot) =>

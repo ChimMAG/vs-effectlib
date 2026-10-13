@@ -1,8 +1,6 @@
-using System;
 using System.Collections.Generic;
 using System.Text;
 using Vintagestory.API.Common;
-using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
@@ -31,6 +29,8 @@ namespace EffectLib
 
         private static readonly HashSet<long> resolvedEntities = [];
 
+        private readonly HashSet<long> interceptedEntities = [];
+
         public override void Initialize(JsonObject properties)
         {
             base.Initialize(properties);
@@ -39,7 +39,7 @@ namespace EffectLib
             consumeOnUse = properties["consumeOnUse"].AsBool(true);
             durabilityCost = properties["durabilityCost"].AsInt();
             animation = properties["animation"].AsString("eat");
-            sound = properties["sound"].AsString("game:sounds/player/eat");
+            sound = properties["sound"].AsString("eat");
             consumeTime = properties["consumeTime"].AsFloat(1.6f);
         }
 
@@ -131,7 +131,13 @@ namespace EffectLib
             if (!manager.TryApply(effectId, ctx, name))
                 return false;
 
-            EffectLang.SendGained(player, effectId, name);
+            if (ctx.Notify)
+                EffectLang.SendFor(
+                    player.Player as IServerPlayer,
+                    EffectRegistry.DomainOf(effectId),
+                    "effect-gain",
+                    name
+                );
 
             return true;
         }
@@ -160,11 +166,7 @@ namespace EffectLib
         {
             byEntity.PlayEntitySound("smallhurt", (byEntity as EntityPlayer)?.Player);
             if (reasonLangKey != null && byEntity is EntityPlayer { Player: IServerPlayer serverPlayer })
-                serverPlayer.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    Lang.Get(reasonLangKey),
-                    EnumChatType.Notification
-                );
+                EffectLang.Send(serverPlayer, reasonLangKey);
         }
 
         public override void OnHeldInteractStart(
@@ -177,11 +179,13 @@ namespace EffectLib
             ref EnumHandling bhHandling
         )
         {
+            interceptedEntities.Remove(byEntity.EntityId);
             if (!ShouldIntercept(slot, byEntity, blockSel))
                 return;
             if (!TryResolveEffect(slot, byEntity, out _, out _, out _))
                 return;
 
+            interceptedEntities.Add(byEntity.EntityId);
             if (byEntity.World.Side == EnumAppSide.Server)
                 resolvedEntities.Remove(byEntity.EntityId);
 
@@ -197,10 +201,10 @@ namespace EffectLib
             }
 
             byEntity.World.RegisterCallback(
-                dt =>
+                _ =>
                 {
                     if (byEntity.Controls.HandUse == EnumHandInteract.HeldItemInteract)
-                        byEntity.PlayEntitySound(sound, (byEntity as EntityPlayer)?.Player);
+                        PlayUseSound(byEntity);
                 },
                 200
             );
@@ -227,7 +231,10 @@ namespace EffectLib
             ref EnumHandling handling
         )
         {
-            if (!TryResolveEffect(slot, byEntity, out _, out _, out _))
+            if (
+                !interceptedEntities.Contains(byEntity.EntityId)
+                || !TryResolveEffect(slot, byEntity, out _, out _, out _)
+            )
                 return base.OnHeldInteractStep(
                     secondsUsed,
                     slot,
@@ -294,7 +301,10 @@ namespace EffectLib
         {
             ClearProgressBar();
 
-            if (!TryResolveEffect(slot, byEntity, out _, out _, out _))
+            if (
+                !interceptedEntities.Remove(byEntity.EntityId)
+                || !TryResolveEffect(slot, byEntity, out _, out _, out _)
+            )
                 return;
 
             handling = EnumHandling.PreventDefault;
@@ -311,6 +321,19 @@ namespace EffectLib
                 return;
 
             TryConsumeAndApply(slot, byEntity);
+        }
+
+        // "sound" is one of the entity's own sound types ("eat", "drink"), or an asset path.
+        private void PlayUseSound(EntityAgent byEntity)
+        {
+            if (string.IsNullOrWhiteSpace(sound))
+                return;
+
+            IPlayer player = (byEntity as EntityPlayer)?.Player;
+            if (sound.Contains('/'))
+                byEntity.World.PlaySoundAt(AssetLocation.Create(sound, collObj.Code.Domain), byEntity, player);
+            else
+                byEntity.PlayEntitySound(sound, player);
         }
 
         private void ClearProgressBar()
@@ -392,7 +415,7 @@ namespace EffectLib
 
         private static void AppendDescription(StringBuilder dsc, string effectId, EffectContext ctx)
         {
-            foreach (string line in EffectDescription.Lines(effectId, ctx))
+            foreach (string line in EffectDescription.Lines(ctx))
                 dsc.AppendLine(line);
         }
     }

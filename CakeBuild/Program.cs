@@ -103,6 +103,8 @@ public sealed class PackageTask : FrostingTask<BuildContext>
         context.EnsureDirectoryExists($"../Releases/{context.Name}");
         context.CopyFiles($"../{context.ProjectName}/bin/{context.BuildConfiguration}/Mods/mod/publish/*", $"../Releases/{context.Name}");
         context.CopyDirectory($"../{context.ResourcesDir}", $"../Releases/{context.Name}/");
+        // Sick of the ~ files, that are like backup files
+        context.DeleteFiles($"../Releases/{context.Name}/**/*~");
         context.Zip($"../Releases/{context.Name}", $"../Releases/{context.Name}_{context.Version}.zip");
     }
 }

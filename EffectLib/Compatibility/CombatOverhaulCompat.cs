@@ -242,7 +242,7 @@ namespace EffectLib
                 Delegate.CreateDelegate(typeof(Action), entry.GetMethod("Shutdown"));
 
             // Hooks passed as delegate args (rather than the compat assembly calling
-            // CoatingPolicy/CoatedEffects/EffectLang directly) so EffectLibCombatOverhaulCompat
+            // CoatingPolicy/CoatedEffects directly) so EffectLibCombatOverhaulCompat
             // never needs a compile-time reference back to EffectLib.csproj - EffectLib.csproj
             // already references it the other way (to embed its built dll as a resource), and a
             // reference in both directions is a circular project dependency MSBuild can't build.
@@ -265,7 +265,6 @@ namespace EffectLib
                                     durationMul
                                 )
                         ),
-                        (System.Func<string, string, object[], string>)EffectLang.Get,
                     ]
                 );
         }

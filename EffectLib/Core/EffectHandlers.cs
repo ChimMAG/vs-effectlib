@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Common;
 
 namespace EffectLib
@@ -17,18 +17,28 @@ namespace EffectLib
 
     public static class EffectHandlers
     {
-        private static readonly List<IEffectHandler> handlers = [];
+        private static IEffectHandler[] handlers = [];
+        private static readonly object handlersLock = new();
 
         public static void Register(IEffectHandler handler)
         {
-            if (handler != null && !handlers.Contains(handler))
-                handlers.Add(handler);
+            if (handler == null)
+                return;
+
+            lock (handlersLock)
+            {
+                if (!handlers.Contains(handler))
+                    handlers = [.. handlers, handler];
+            }
         }
 
         public static void Unregister(IEffectHandler handler)
         {
-            if (handler != null)
-                handlers.Remove(handler);
+            if (handler == null)
+                return;
+
+            lock (handlersLock)
+                handlers = [.. handlers.Where(h => h != handler)];
         }
 
         internal static void Applied(

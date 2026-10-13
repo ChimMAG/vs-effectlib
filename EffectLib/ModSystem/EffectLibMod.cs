@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -29,15 +30,18 @@ namespace EffectLib
             {
                 EffectLibConfig fromDisk = api.LoadModConfig<EffectLibConfig>(cfgFileName);
                 if (fromDisk == null)
-                    api.StoreModConfig(EffectLibConfig.Loaded, cfgFileName);
+                    api.StoreModConfig(EffectLibConfig.Loaded = new EffectLibConfig(), cfgFileName);
                 else
                     EffectLibConfig.Loaded = fromDisk;
             }
-            catch
+            catch (Exception err)
             {
-                api.Logger.Error("[EffectLib] Failed to load mod config. Reverting to default settings.");
-                api.StoreModConfig(EffectLibConfig.Loaded, cfgFileName);
+                // Left untouched on disk, so a typo can be fixed instead of being wiped.
+                api.Logger.Error("[EffectLib] Failed to load {0}, using default settings: {1}", cfgFileName, err);
+                EffectLibConfig.Loaded = new EffectLibConfig();
             }
+
+            EffectLibConfig.Loaded.Clamp();
         }
 
         public override void Start(ICoreAPI api)
@@ -152,22 +156,6 @@ namespace EffectLib
                 if (api.World.Player?.Entity is EntityPlayer sizedPlayer)
                     UtilityEffects.ApplySizeToEntity(sizedPlayer);
             };
-
-            api.Event.PlayerEntitySpawn += iPlayer =>
-            {
-                if (iPlayer.Entity is not EntityPlayer player)
-                    return;
-
-                bool baselineCanClimbAnywhere = player.Properties.CanClimbAnywhere;
-
-                void SyncClimb() =>
-                    player.Properties.CanClimbAnywhere =
-                        player.WatchedAttributes.GetBool(EffectAttr.CanClimb)
-                        || baselineCanClimbAnywhere;
-
-                SyncClimb();
-                player.WatchedAttributes.RegisterModifiedListener(EffectAttr.CanClimb, SyncClimb);
-            };
         }
 
         private static void OnPlayerReady(IServerPlayer player)
@@ -211,6 +199,8 @@ namespace EffectLib
                 sapi.Event.PlayerJoin -= SendConfigSync;
                 sapi.Event.AfterActiveSlotChanged -= OnActiveSlotChanged;
                 sapi = null;
+
+                CoatedEffects.ClearPendingStatRemovals();
             }
 
             harmony?.UnpatchAll(HarmonyId);

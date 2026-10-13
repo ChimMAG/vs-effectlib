@@ -25,8 +25,6 @@ namespace EffectLib
         private const string KeyBaseEntitySize = "effectlib:baseEntitySize";
         private const string KeySizeDomain = "effectlib:sizeDomain";
 
-        private const string LegacyDomain = "alchemy";
-
         private static float ResolveBaseHeight(EntityPlayer entity)
         {
             float stored = entity.WatchedAttributes.GetFloat(KeyBaseHeight, 0f);
@@ -69,7 +67,7 @@ namespace EffectLib
             float currentIntent = entity.WatchedAttributes.GetFloat(SizeDeltaAttr, 0f);
             EnsureBaseSize(entity);
             if (Math.Abs(currentIntent) < 0.001f)
-                entity.WatchedAttributes.SetString(KeySizeDomain, domain ?? LegacyDomain);
+                entity.WatchedAttributes.SetString(KeySizeDomain, domain ?? EffectRegistry.DefaultDomain);
 
             entity.WatchedAttributes.SetFloat(SizeDeltaAttr, currentIntent + ctx.SizeChange);
             entity.WatchedAttributes.MarkPathDirty(SizeDeltaAttr);
@@ -122,7 +120,7 @@ namespace EffectLib
 
         public static void ResetSizeIfCovered(EntityPlayer entity, EffectPurge scope)
         {
-            string domain = entity.WatchedAttributes.GetString(KeySizeDomain, LegacyDomain);
+            string domain = entity.WatchedAttributes.GetString(KeySizeDomain, EffectRegistry.DefaultDomain);
             if (scope.CoversDomain(domain))
                 ResetPlayerSize(entity);
         }
@@ -259,7 +257,7 @@ namespace EffectLib
                 byEntity.GetBehavior<EntityBehaviorTemporalStabilityAffected>();
             if (stabilityBehavior == null)
                 return;
-            stabilityBehavior.OwnStability += stabilityGain;
+            stabilityBehavior.OwnStability = GameMath.Clamp(stabilityBehavior.OwnStability + stabilityGain, 0f, 1);
         }
 
         public static void ApplyReshape(EntityPlayer entity)
@@ -285,7 +283,7 @@ namespace EffectLib
         public static bool IsRecallOnMount(EntityAgent byEntity, EffectContext ctx) =>
             ctx.Respawn
             && ctx.BlockRecallOnMount
-            && byEntity.MountedOn?.MountSupplier?.OnEntity?.HasBehavior("mountable") == true;
+            && byEntity.MountedOn?.MountSupplier?.OnEntity?.HasBehavior("rideable") == true;
 
         // Blocks a grow/shrink effect once the player is already at that size limit.
         public static bool IsSizeAtLimit(EntityAgent byEntity, EffectContext ctx) =>

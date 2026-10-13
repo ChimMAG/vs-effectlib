@@ -1,6 +1,5 @@
 using HarmonyLib;
 using Vintagestory.API.Common;
-using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 #pragma warning disable IDE0130
@@ -15,12 +14,7 @@ namespace EffectLib
             if (__instance is not EntityPlayer player || !player.WatchedAttributes.GetBool(EffectAttr.CanFly))
                 return true;
 
-            if (player.Player is IServerPlayer serverPlayer)
-                serverPlayer.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    Lang.Get("effectlib:flight-mount-block"),
-                    EnumChatType.Notification
-                );
+            EffectLang.Send(player.Player as IServerPlayer, "effectlib:flight-mount-block");
 
             __result = false;
             return false;

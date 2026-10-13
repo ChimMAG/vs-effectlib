@@ -43,17 +43,17 @@ namespace EffectLib
 
         public static IReadOnlyDictionary<string, EffectRegistration> Registrations => entries;
 
-        private static readonly HashSet<string> reserved = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, byte> reserved = new(StringComparer.OrdinalIgnoreCase);
 
         public static void Reserve(IEnumerable<string> ids)
         {
             foreach (string id in ids)
                 if (!string.IsNullOrWhiteSpace(id))
-                    reserved.Add(id);
+                    reserved.TryAdd(id, 0);
         }
 
         public static bool IsReserved(string effectId) =>
-            effectId != null && reserved.Contains(effectId);
+            effectId != null && reserved.ContainsKey(effectId);
 
         public static void Register(
             string effectId,
@@ -71,7 +71,7 @@ namespace EffectLib
             domain = string.IsNullOrWhiteSpace(domain) ? DefaultDomain : domain;
             effectId = EffectIds.Qualify(effectId, domain);
 
-            if (reserved.Contains(effectId))
+            if (reserved.ContainsKey(effectId))
                 return;
 
             HashSet<string> channelSet =
@@ -92,12 +92,19 @@ namespace EffectLib
                 bySource[SourceKey(effectId, iconSource)] = registration;
         }
 
-        private static readonly List<System.Func<string, EffectRegistration>> resolvers = [];
+        private static System.Func<string, EffectRegistration>[] resolvers = [];
+        private static readonly object resolversLock = new();
 
         public static void AddResolver(System.Func<string, EffectRegistration> resolver)
         {
-            if (resolver != null && !resolvers.Contains(resolver))
-                resolvers.Add(resolver);
+            if (resolver == null)
+                return;
+
+            lock (resolversLock)
+            {
+                if (!resolvers.Contains(resolver))
+                    resolvers = [.. resolvers, resolver];
+            }
         }
 
         private static EffectRegistration Resolve(string effectId)

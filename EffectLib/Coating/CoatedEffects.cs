@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.Server;
-using Vintagestory.GameContent;
 
 #pragma warning disable IDE0130
 namespace EffectLib
@@ -13,7 +13,7 @@ namespace EffectLib
 {
     public static class CoatedEffects
     {
-        public const string KeyEffectId = "coatedPotionId";
+        public const string KeyEffectId = "coatedEffectId";
         public const string KeyItemCode = "coatedItemCode";
         public const string KeyMultiplier = "coatMultiplier";
         public const string KeyDurationMul = "coatDurationMul";
@@ -232,21 +232,20 @@ namespace EffectLib
                     ?? CoatingPolicy.GetBlockReason(effectId, playerEntity, ctx);
                 if (blockReason != null)
                 {
-                    (playerEntity.Player as IServerPlayer)?.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        Lang.Get(blockReason),
-                        EnumChatType.Notification
-                    );
+                    EffectLang.Send(playerEntity.Player as IServerPlayer, blockReason);
                     return;
                 }
 
                 if (ctx.ResetsEffects)
                     manager.PurgeFor(effectId, ctx);
 
-                if (manager.TryApply(effectId, ctx, displayName))
-                {
-                    EffectLang.SendGained(playerEntity, effectId, displayName);
-                }
+                if (manager.TryApply(effectId, ctx, displayName) && ctx.Notify)
+                    EffectLang.SendFor(
+                        playerEntity.Player as IServerPlayer,
+                        EffectRegistry.DomainOf(effectId),
+                        "effect-gain",
+                        displayName
+                    );
             }
             else if (entity is EntityAgent agent)
             {
@@ -254,8 +253,8 @@ namespace EffectLib
                 if (ctx == null)
                     return;
 
-                if (ctx.ResetsEffects && agent.GetBehavior<EntityBehaviorHealthOverTime>() is { } hot)
-                    agent.RemoveBehavior(hot);
+                if (ctx.ResetsEffects)
+                    ClearAgentEffects(agent);
 
                 if (ctx.TickSec > 0 && Math.Abs(ctx.Health) > float.Epsilon)
                     ApplyTickEffect(agent, ctx);
@@ -263,7 +262,7 @@ namespace EffectLib
                     ApplyInstantHealth(agent, ctx);
 
                 if (ctx.StatModifiers.Count > 0 && ctx.Duration > 0)
-                    ApplyStatEffect(agent, ctx);
+                    ApplyStatEffect(agent, effectId, ctx);
             }
         }
 
@@ -296,24 +295,57 @@ namespace EffectLib
             }
         }
 
-        private static void ApplyStatEffect(EntityAgent agent, EffectContext ctx)
-        {
-            const string subkey = "weaponcoat";
-            foreach (KeyValuePair<string, float> stat in ctx.StatModifiers)
-                agent.Stats.Set(stat.Key, subkey, stat.Value, false);
+        // Players have EffectManager; other creatures get one pending stat removal per effect, so a
+        // re-hit extends the effect instead of being cut short by the earlier hit's timer.
+        private static readonly Dictionary<(long EntityId, string EffectId), (long CallbackId, string[] Stats)> statRemovals = [];
 
-            long agentId = agent.EntityId;
-            List<string> effectKeys = [.. ctx.StatModifiers.Keys];
-            agent.World.RegisterCallback(
+        private static void ApplyStatEffect(EntityAgent agent, string effectId, EffectContext ctx)
+        {
+            (long, string) key = (agent.EntityId, effectId);
+            string statCode = AppliedEffect.StatCode(effectId);
+            CancelStatEffect(agent, key);
+
+            foreach (KeyValuePair<string, float> stat in ctx.StatModifiers)
+                agent.Stats.Set(stat.Key, statCode, stat.Value, false);
+
+            string[] stats = [.. ctx.StatModifiers.Keys];
+            long callbackId = agent.World.RegisterCallback(
                 _ =>
                 {
-                    if (agent.World.GetEntityById(agentId) is not EntityAgent target)
-                        return;
-                    foreach (string key in effectKeys)
-                        target.Stats.Remove(key, subkey);
+                    statRemovals.Remove(key);
+                    if (agent.World.GetEntityById(agent.EntityId) is EntityAgent target)
+                        RemoveStats(target, stats, statCode);
                 },
-                ctx.Duration * 1000
+                (int)Math.Min(int.MaxValue, ctx.Duration * 1000L)
             );
+            statRemovals[key] = (callbackId, stats);
         }
+
+        private static void CancelStatEffect(EntityAgent agent, (long EntityId, string EffectId) key)
+        {
+            if (!statRemovals.Remove(key, out (long CallbackId, string[] Stats) pending))
+                return;
+
+            agent.World.UnregisterCallback(pending.CallbackId);
+            RemoveStats(agent, pending.Stats, AppliedEffect.StatCode(key.EffectId));
+        }
+
+        private static void RemoveStats(EntityAgent agent, string[] stats, string statCode)
+        {
+            foreach (string stat in stats)
+                agent.Stats.Remove(stat, statCode);
+        }
+
+        private static void ClearAgentEffects(EntityAgent agent)
+        {
+            if (agent.GetBehavior<EntityBehaviorHealthOverTime>() is { } healthOverTime)
+                agent.RemoveBehavior(healthOverTime);
+
+            foreach ((long, string) key in statRemovals.Keys.Where(k => k.EntityId == agent.EntityId).ToList())
+                CancelStatEffect(agent, key);
+        }
+
+        // Pending removals hold callback ids from the world that scheduled them.
+        internal static void ClearPendingStatRemovals() => statRemovals.Clear();
     }
 }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -43,12 +42,22 @@ namespace EffectLib
         private static ICoreAPI api;
         private static TagSet coatableWeaponTagSet;
         private static bool coatableWeaponTagSetBuilt;
+        private static string[] coatableProjectileCodes;
 
         public static void Configure(CoatingConfig hooks) => config = hooks ?? new();
 
-        public static void Init(ICoreAPI coreApi) => api = coreApi;
+        // Also runs per world, so a new world never reuses the last one's tag ids.
+        public static void Init(ICoreAPI coreApi)
+        {
+            api = coreApi;
+            InvalidateCaches();
+        }
 
-        public static void InvalidateCaches() => coatableWeaponTagSetBuilt = false;
+        public static void InvalidateCaches()
+        {
+            coatableWeaponTagSetBuilt = false;
+            coatableProjectileCodes = null;
+        }
 
         public static bool AllowCoating() => config.AllowCoating?.Invoke() ?? true;
 
@@ -92,14 +101,10 @@ namespace EffectLib
         {
             if (!coatableWeaponTagSetBuilt && api != null)
             {
-                List<string> tagList =
-                [
-                    .. EffectLibConfig.Loaded.CoatableWeaponTags
-                        .Split(',')
-                        .Select(t => t.Trim())
-                        .Where(t => t.Length > 0),
-                ];
-                api.CollectibleTagRegistry.TryCreateTagSet(out coatableWeaponTagSet, tagList);
+                api.CollectibleTagRegistry.TryCreateTagSetAndLogIssues(
+                    out coatableWeaponTagSet,
+                    (ReadOnlySpan<string>)SplitList(EffectLibConfig.Loaded.CoatableWeaponTags)
+                );
                 coatableWeaponTagSetBuilt = true;
             }
             tagSet = coatableWeaponTagSet;
@@ -111,31 +116,16 @@ namespace EffectLib
             if (col?.Code == null)
                 return false;
 
-            string[] codes =
-            [
-                .. EffectLibConfig.Loaded.CoatableProjectilesCodes
-                    .Split(',')
-                    .Select(c => c.Trim())
-                    .Where(c => c.Length > 0),
-            ];
+            string[] codes = coatableProjectileCodes ??= SplitList(EffectLibConfig.Loaded.CoatableProjectilesCodes);
             return codes.Length > 0 && WildcardUtil.Match(codes, col.Code.ToString());
         }
 
-        private static (string EffectId, float PotencyMul, float DurationMul)? DefaultResolveLiquidEffect(ItemStack stack)
-        {
-            CollectibleObject content = stack?.Collectible;
-            JsonObject def = content?.Attributes?["effectinfo"];
-            if (def?.Exists != true)
-                return null;
+        private static string[] SplitList(string list) =>
+            [.. (list ?? "").Split(',').Select(entry => entry.Trim()).Where(entry => entry.Length > 0)];
 
-            string effectId = EffectIds.Read(def, "effectId", content);
-            if (string.IsNullOrWhiteSpace(effectId))
-                return null;
-
-            if (!EffectRegistry.IsRegistered(effectId, content.Code))
-                JsonEffectDefinition.RegisterFrom(effectId, content.Code.Domain, def, content.Code);
-
-            return (effectId, 1f, 1f);
-        }
+        private static (string EffectId, float PotencyMul, float DurationMul)? DefaultResolveLiquidEffect(ItemStack stack) =>
+            JsonEffectDefinition.TryResolve(stack?.Collectible, "effectinfo", "effectId", out string effectId)
+                ? (effectId, 1f, 1f)
+                : null;
     }
 }

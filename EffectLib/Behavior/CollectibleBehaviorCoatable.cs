@@ -8,8 +8,8 @@ namespace EffectLib
 #pragma warning restore IDE0130
 {
     /// <summary>
-    /// This behaviour should be attached to tools or items that should be able to be coated with an effect,
-    /// for example a sword or arrow. It is a "coatable" version of the <see cref="CollectibleBehaviorEffectItem"/> behavior.
+    /// Shows a weapon or arrow's current coating in its tooltip. Attached automatically to
+    /// everything <see cref="CoatingPolicy"/> treats as coatable.
     /// </summary>
     public class CollectibleBehaviorCoatable(CollectibleObject collObj) : CollectibleBehavior(collObj)
     {
@@ -30,16 +30,17 @@ namespace EffectLib
 
             string itemCode = attrs.GetString(CoatedEffects.KeyItemCode);
             string displayName = CoatedEffects.ResolveDisplayName(itemCode, effectId);
+            string domain = CoatedEffects.SourceFromItemCode(itemCode)?.Domain;
             bool isProjectile = CoatingPolicy.IsCoatableProjectile(inSlot.Itemstack.Collectible);
 
-            dsc.Append(string.Format("<font color=\"{0}\">", "#b8bb00"));
+            dsc.Append("<font color=\"#b8bb00\">");
             dsc.Append(
                 isProjectile
-                    ? EffectLang.Get(effectId, "arrow-coated", displayName)
-                    : EffectLang.Get(effectId, "weapon-coated", displayName, attrs.GetInt(CoatedEffects.KeyCharges))
+                    ? Lang.Get(EffectLang.Key(domain, "arrow-coated"), displayName)
+                    : Lang.Get(EffectLang.Key(domain, "weapon-coated"), displayName, attrs.GetInt(CoatedEffects.KeyCharges))
             );
             if (!CoatingPolicy.IsEffectCoatable(effectId))
-                dsc.Append(" (" + Lang.Get("effectlib:coating-disabled-suffix") + ")");
+                dsc.Append(" (" + Lang.Get(EffectLang.Key(domain, "coating-disabled-suffix")) + ")");
             dsc.AppendLine("</font>");
         }
     }

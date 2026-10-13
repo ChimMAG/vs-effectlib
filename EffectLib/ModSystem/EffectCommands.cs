@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
 #pragma warning disable IDE0130
@@ -12,7 +13,7 @@ namespace EffectLib
 {
     public class EffectCommands : ModSystem
     {
-        private const int DefaultDurationSec = 600;
+        private const int DefaultDurationSec = EffectPrimitives.DefaultDurationSec;
 
         private ICoreServerAPI sapi;
 
@@ -412,6 +413,9 @@ namespace EffectLib
                 if (repeatSec > 0f)
                     EffectPrimitives.MakeRepeating(ctx, repeatSec, damageType);
 
+                if (ctx.ResetsEffects)
+                    manager.PurgeFor(effectId, ctx);
+
                 if (manager.IsActive(effectId))
                     manager.RemoveEffect(effectId, false);
 
@@ -488,7 +492,11 @@ namespace EffectLib
             if (!string.IsNullOrEmpty(effect) && EffectPrimitives.Get(effect) != null)
                 effectId = EffectPrimitives.IdFor(effect);
             else if (effect?.StartsWith("stat:", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                if (effect.Length <= "stat:".Length)
+                    return TextCommandResult.Error("Name the stat, e.g. stat:walkspeed.");
                 effectId = EffectPrimitives.StatIdPrefix + effect["stat:".Length..];
+            }
             effectId = effectId?.ToLowerInvariant();
 
             int cleared = 0;
@@ -575,7 +583,7 @@ namespace EffectLib
         }
 
         private static string DisplayName(string effectId, string fallback) =>
-            EffectLang.NameIfExists(effectId) ?? fallback;
+            Lang.GetIfExists(effectId) ?? fallback;
 
         private static string FormatTime(int sec) =>
             sec >= 3600

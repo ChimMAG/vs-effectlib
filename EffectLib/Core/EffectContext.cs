@@ -10,7 +10,7 @@ namespace EffectLib
 
         public Dictionary<string, float> StatModifiers { get; } = [];
 
-        public float PotencyMul { get; set; }
+        public float PotencyMul { get; set; } = 1f;
 
         public float DurationMul { get; set; } = 1f;
 
@@ -79,7 +79,7 @@ namespace EffectLib
         {
             if (Math.Abs(baseValue) <= float.Epsilon)
                 return;
-            StatModifiers.Add(key, baseValue * PotencyMul);
+            StatModifiers[key] = StatModifiers.GetValueOrDefault(key) + baseValue * PotencyMul;
         }
 
         public void SetHealth(float healthWithoutMul)

@@ -1,3 +1,4 @@
+using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
 
@@ -5,6 +6,10 @@ using Vintagestory.API.Datastructures;
 namespace EffectLib
 #pragma warning restore IDE0130
 {
+    /// <summary>
+    /// Held in the off hand, coats the main hand's weapon or arrows with this item's effect while
+    /// the player holds sneak + right mouse. Driven by <see cref="CoatSourceIdlePatch"/>.
+    /// </summary>
     public class CollectibleBehaviorCoatSource(CollectibleObject collObj)
         : CollectibleBehavior(collObj)
     {
@@ -32,26 +37,18 @@ namespace EffectLib
 
         protected virtual void RegisterOwnEffect()
         {
-            JsonObject def = collObj.Attributes?[attributeKey];
-            if (def?.Exists != true)
-                return;
-
-            ownEffectId = EffectIds.Read(def, idField, collObj);
-            if (string.IsNullOrWhiteSpace(ownEffectId))
-            {
-                Api.Logger.Warning(
-                    "[EffectLib] {0}'s '{1}' attribute has no '{2}' - give it one, e.g. "
-                        + "\"{1}\": {{ \"{2}\": \"{3}:youreffectid\", ... }}. This item will not coat anything.",
-                    collObj.Code,
+            if (
+                JsonEffectDefinition.TryReadOwn(
+                    collObj,
                     attributeKey,
                     idField,
-                    collObj.Code.Domain
-                );
-                ownEffectId = null;
-                return;
-            }
-
-            JsonEffectDefinition.RegisterFrom(ownEffectId, collObj.Code.Domain, def, collObj.Code);
+                    "CoatSource",
+                    Api.Logger,
+                    out JsonObject def,
+                    out ownEffectId
+                )
+            )
+                JsonEffectDefinition.RegisterFrom(ownEffectId, collObj.Code.Domain, def, collObj.Code);
         }
 
         protected virtual float GetConsumeTime() => consumeTime;
@@ -97,6 +94,29 @@ namespace EffectLib
                 s => HasEnoughSource(s) && ConsumeSource(s, byEntity),
                 GetConsumeTime()
             );
+        }
+
+        public override WorldInteraction[] GetHeldInteractionHelp(ItemSlot inSlot, ref EnumHandling handling)
+        {
+            WorldInteraction[] interactions = base.GetHeldInteractionHelp(inSlot, ref handling);
+            ItemStack sourceStack = GetSourceStack(inSlot);
+            if (
+                !CoatingPolicy.AllowCoating()
+                || !TryResolveEffect(sourceStack, out string effectId, out _, out _)
+                || !CoatingPolicy.IsEffectCoatable(effectId)
+            )
+                return interactions;
+
+            return
+            [
+                .. interactions,
+                new WorldInteraction
+                {
+                    ActionLangCode = EffectLang.Key(sourceStack?.Collectible?.Code?.Domain, "heldhelp-coat"),
+                    MouseButton = EnumMouseButton.Right,
+                    HotKeyCode = "shift",
+                },
+            ];
         }
     }
 }

@@ -15,6 +15,7 @@ namespace EffectLib
         Held,
         Hotbar,
         Inventory,
+        Worn,
     }
 
     public enum EnumCarryHand
@@ -27,7 +28,7 @@ namespace EffectLib
 
     /// <summary>
     /// Attach to an item/block that should grant its effect passively for as long as it is
-    /// carried, rather than consumed. Where the item must be (held/hotbar/inventory) and, for
+    /// carried, rather than consumed. Where the item must be (held/hotbar/inventory/worn) and, for
     /// "held", which hand(s), is declared on the item's own effect definition attribute
     /// alongside effectId/duration/stats/etc. (see <see cref="JsonEffectDefinition"/>), not as a
     /// behavior property - it's per-item content, not parsing config. Activation/deactivation is
@@ -111,7 +112,7 @@ namespace EffectLib
             {
                 Api.Logger.Warning(
                     "[EffectLib] {0}'s '{1}' attribute has no valid 'activation' - give it one of "
-                        + "\"held\", \"hotbar\" or \"inventory\". This item will do nothing.",
+                        + "\"held\", \"hotbar\", \"inventory\" or \"worn\". This item will do nothing.",
                     collObj.Code,
                     attributeKey
                 );
@@ -120,8 +121,19 @@ namespace EffectLib
             Activation = parsedActivation;
 
             string hand = def["hand"].AsString();
-            if (!string.IsNullOrWhiteSpace(hand) && Enum.TryParse(hand, true, out EnumCarryHand parsedHand))
-                Hand = parsedHand;
+            if (!string.IsNullOrWhiteSpace(hand))
+            {
+                if (Enum.TryParse(hand, true, out EnumCarryHand parsedHand))
+                    Hand = parsedHand;
+                else
+                    Api.Logger.Warning(
+                        "[EffectLib] {0}'s '{1}' attribute has an invalid 'hand' \"{2}\" - give it one of "
+                            + "\"main\", \"off\", \"either\" or \"both\". Using \"either\".",
+                        collObj.Code,
+                        attributeKey,
+                        hand
+                    );
+            }
 
             AllowWhenBroken = def["allowWhenBroken"].AsBool();
             DestroyWhenBroken = def["destroyWhenBroken"].AsBool();
@@ -221,14 +233,11 @@ namespace EffectLib
                 slot.MarkDirty();
 
                 if (byEntity is EntityPlayer { Player: IServerPlayer serverPlayer })
-                    serverPlayer.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        EffectLang.Get(
-                            EffectId,
-                            nowOn ? "carry-toggled-on" : "carry-toggled-off",
-                            DisplayName
-                        ),
-                        EnumChatType.Notification
+                    EffectLang.SendFor(
+                        serverPlayer,
+                        Source.Domain,
+                        nowOn ? "carry-toggled-on" : "carry-toggled-off",
+                        DisplayName
                     );
             }
 
@@ -245,10 +254,33 @@ namespace EffectLib
         {
             base.GetHeldItemInfo(inSlot, dsc, world, withDebugInfo);
 
+            EffectContext ctx = EffectId == null ? null : EffectRegistry.Build(EffectId, 1f, Source);
+            if (ctx != null)
+            {
+                dsc.AppendLine(Lang.Get(EffectLang.Key(Source.Domain, "carry-when-" + ActivationLangSuffix)));
+                foreach (string line in EffectDescription.EffectLines(ctx))
+                    dsc.AppendLine(line);
+            }
+
             if (RequiresToggle)
                 dsc.AppendLine(
-                    Lang.Get(IsToggledOn(inSlot) ? "effectlib:carry-toggle-state-on" : "effectlib:carry-toggle-state-off")
+                    Lang.Get(EffectLang.Key(Source.Domain, IsToggledOn(inSlot) ? "carry-toggle-state-on" : "carry-toggle-state-off"))
                 );
         }
+
+        private string ActivationLangSuffix =>
+            Activation switch
+            {
+                EnumCarryActivation.Held => Hand switch
+                {
+                    EnumCarryHand.Main => "held-main",
+                    EnumCarryHand.Off => "held-off",
+                    EnumCarryHand.Both => "held-both",
+                    _ => "held",
+                },
+                EnumCarryActivation.Hotbar => "hotbar",
+                EnumCarryActivation.Worn => "worn",
+                _ => "inventory",
+            };
     }
 }

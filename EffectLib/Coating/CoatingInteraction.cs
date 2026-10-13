@@ -113,10 +113,10 @@ namespace EffectLib
             if (string.IsNullOrEmpty(effectId) || !CoatingPolicy.IsEffectCoatable(effectId))
             {
                 if (notifiedEntities.Add(entityId) && byEntity is EntityPlayer { Player: IServerPlayer serverPlayer })
-                    serverPlayer.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        EffectLang.Get(effectId, "coating-not-allowed"),
-                        EnumChatType.Notification
+                    EffectLang.SendFor(
+                        serverPlayer,
+                        CoatedEffects.SourceFromItemCode(itemCode)?.Domain,
+                        "coating-not-allowed"
                     );
                 holdStartMs.Remove(entityId);
                 return;
@@ -161,14 +161,11 @@ namespace EffectLib
 
             bool isProjectile = CoatingPolicy.IsCoatableProjectile(mainHandSlot.Itemstack.Collectible);
             IServerPlayer serverPlayer = playerEntity.Player as IServerPlayer;
+            string domain = CoatedEffects.SourceFromItemCode(itemCode)?.Domain;
 
             if (isProjectile && CoatedEffects.HasProjectileCoat(mainHandSlot.Itemstack))
             {
-                serverPlayer?.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    EffectLang.Get(effectId, "arrow-already-coated"),
-                    EnumChatType.Notification
-                );
+                EffectLang.SendFor(serverPlayer, domain, "arrow-already-coated");
                 return;
             }
 
@@ -196,21 +193,13 @@ namespace EffectLib
                     )
                 )
                 {
-                    serverPlayer?.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        EffectLang.Get(effectId, "coating-conflict"),
-                        EnumChatType.Notification
-                    );
+                    EffectLang.SendFor(serverPlayer, domain, "coating-conflict");
                     return;
                 }
 
                 if (existingCharges >= CoatingPolicy.MaxCharges())
                 {
-                    serverPlayer?.SendMessage(
-                        GlobalConstants.InfoLogChatGroup,
-                        EffectLang.Get(effectId, "coating-max-charges"),
-                        EnumChatType.Notification
-                    );
+                    EffectLang.SendFor(serverPlayer, domain, "coating-max-charges");
                     return;
                 }
             }
@@ -250,12 +239,12 @@ namespace EffectLib
                 );
             }
 
-            playerEntity.Player.InventoryManager.BroadcastHotbarSlot();
+            playerEntity.Player?.InventoryManager?.BroadcastHotbarSlot();
 
-            string msg = isProjectile
-                ? EffectLang.Get(effectId, "arrow-coated", displayName)
-                : EffectLang.Get(effectId, "weapon-coated", displayName, existingCharges + 1);
-            serverPlayer.SendMessage(GlobalConstants.InfoLogChatGroup, msg, EnumChatType.Notification);
+            if (isProjectile)
+                EffectLang.SendFor(serverPlayer, domain, "arrow-coated", displayName);
+            else
+                EffectLang.SendFor(serverPlayer, domain, "weapon-coated", displayName, existingCharges + 1);
         }
     }
 }

@@ -1,5 +1,4 @@
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 
@@ -7,57 +6,40 @@ namespace EffectLib
 {
     public static class EffectLang
     {
-        public static string Get(string effectId, string key, params object[] args) =>
-            GetForDomain(EffectRegistry.DomainOf(effectId), key, args);
-
-        public static void SendGained(EntityPlayer player, string effectId, string displayName)
-        {
-            if (player?.Player is IServerPlayer serverPlayer)
-                serverPlayer.SendMessage(
-                    GlobalConstants.InfoLogChatGroup,
-                    Get(effectId, "effect-gain", displayName),
-                    EnumChatType.Notification
-                );
-        }
-
-        public static string GetForDomain(string domain, string key, params object[] args)
+        // Which key to show for one of effectlib's lang entries in langCode (default: the current
+        // locale): the mod's "<domain>:<key>", then effectlib's, in that language and then in
+        // English. Neither having it returns effectlib's key, which shows as-is like any missing entry.
+        public static string Key(string domain, string key, string langCode = null)
         {
             string owned = $"{domain}:{key}";
-            if (Lang.HasTranslation(owned, false, false))
-                return Lang.Get(owned, args);
-
             string shared = $"{EffectRegistry.DefaultDomain}:{key}";
-            return Lang.HasTranslation(shared, false, false) ? Lang.Get(shared, args) : key;
+
+            foreach (string lang in new[] { langCode ?? Lang.CurrentLocale, Lang.DefaultLocale })
+            {
+                if (!Lang.AvailableLanguages.TryGetValue(lang, out ITranslationService service))
+                    continue;
+                if (domain != null && service.HasTranslation(owned, false, false))
+                    return owned;
+                if (service.HasTranslation(shared, false, false))
+                    return shared;
+            }
+
+            return shared;
         }
 
-        public static string NameIfExists(string effectId)
-        {
-            if (string.IsNullOrWhiteSpace(effectId))
-                return null;
-
-            if (effectId.Contains(':') && Lang.HasTranslation(effectId, false, false))
-                return Lang.Get(effectId);
-
-            return GetIfExists(effectId, effectId);
-        }
-
-        public static string Name(string effectId) => NameIfExists(effectId) ?? effectId;
-
-        // The effect id's lang entry if a modder gave it one, otherwise a plain list of what
-        // this context does
         public static string NameFor(string effectId, EffectContext ctx) =>
-            NameIfExists(effectId) ?? EffectDescription.Summary(effectId, ctx) ?? effectId;
+            Lang.GetIfExists(effectId) ?? EffectDescription.Summary(ctx) ?? effectId;
 
-        public static string GetIfExists(string effectId, string key)
-        {
-            string domain = EffectRegistry.DomainOf(effectId);
+        public static void Send(IServerPlayer player, string langKey, params object[] args) =>
+            player?.SendMessage(
+                GlobalConstants.InfoLogChatGroup,
+                Lang.GetL(player.LanguageCode ?? Lang.CurrentLocale, langKey, args),
+                EnumChatType.Notification
+            );
 
-            string owned = $"{domain}:{key}";
-            if (Lang.HasTranslation(owned, false, false))
-                return Lang.Get(owned);
-
-            string shared = $"{EffectRegistry.DefaultDomain}:{key}";
-            return Lang.HasTranslation(shared, false, false) ? Lang.Get(shared) : null;
-        }
+        // Send for one of effectlib's lang entries, preferring the mod's own (see Key) in the
+        // player's language.
+        public static void SendFor(IServerPlayer player, string domain, string key, params object[] args) =>
+            Send(player, Key(domain, key, player?.LanguageCode), args);
     }
 }

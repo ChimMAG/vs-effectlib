@@ -20,6 +20,7 @@ namespace EffectLib
 
         private IInventory hookedHotbar;
         private IInventory hookedBackpack;
+        private IInventory hookedWorn;
 
         private long pollListenerId;
         private long safetyNetListenerId;
@@ -56,11 +57,11 @@ namespace EffectLib
 
             hookedHotbar = inventoryManager.GetHotbarInventory();
             hookedBackpack = inventoryManager.GetOwnInventory(GlobalConstants.backpackInvClassName);
+            hookedWorn = inventoryManager.GetOwnInventory(GlobalConstants.characterInvClassName);
 
-            if (hookedHotbar != null)
-                hookedHotbar.SlotModified += OnCarrySlotModified;
-            if (hookedBackpack != null)
-                hookedBackpack.SlotModified += OnCarrySlotModified;
+            foreach (IInventory inventory in new[] { hookedHotbar, hookedBackpack, hookedWorn })
+                if (inventory != null)
+                    inventory.SlotModified += OnCarrySlotModified;
 
             IWorldAccessor world = entity.World;
             pollListenerId = world.RegisterGameTickListener(OnCarryPollTick, CarryPollMs);
@@ -79,13 +80,13 @@ namespace EffectLib
 
         public void StopCarryTracking()
         {
-            if (hookedHotbar != null)
-                hookedHotbar.SlotModified -= OnCarrySlotModified;
-            if (hookedBackpack != null)
-                hookedBackpack.SlotModified -= OnCarrySlotModified;
+            foreach (IInventory inventory in new[] { hookedHotbar, hookedBackpack, hookedWorn })
+                if (inventory != null)
+                    inventory.SlotModified -= OnCarrySlotModified;
 
             hookedHotbar = null;
             hookedBackpack = null;
+            hookedWorn = null;
 
             foreach (long listenerId in new[] { pollListenerId, safetyNetListenerId, durabilityListenerId })
                 if (listenerId != 0)

@@ -35,13 +35,13 @@ namespace EffectLib
         public override string ToggleKeyCombinationCode => HotkeyToggle;
         public override bool Focusable => false;
 
-        public const string HotkeyToggle = "togglepotionhud";
-        public const string HotkeyMove = "movepotionhud";
-        public const string HotkeyStyle = "stylepotionhud";
-        public const string SettingPosition = "alchemyHudPosition";
-        public const string SettingStyle = "alchemyHudStyle";
-        public const string SettingEnabled = "alchemyHudEnabled";
-        public const string SettingAutoEnabled = "alchemyHudAutoEnabled";
+        public const string HotkeyToggle = "effectlibtogglehud";
+        public const string HotkeyMove = "effectlibmovehud";
+        public const string HotkeyStyle = "effectlibstylehud";
+        public const string SettingPosition = "effectlibHudPosition";
+        public const string SettingStyle = "effectlibHudStyle";
+        public const string SettingEnabled = "effectlibHudEnabled";
+        public const string SettingAutoEnabled = "effectlibHudAutoEnabled";
 
         private const int IconSize = 40;
         private const int IconPad = 4;
@@ -179,10 +179,7 @@ namespace EffectLib
             )
                 return;
 
-            string label = EffectLang.GetForDomain(
-                EffectRegistry.DefaultDomain,
-                sizeDelta > 0 ? "grown" : "shrunk"
-            );
+            string label = Lang.Get(sizeDelta > 0 ? "effectlib:grown" : "effectlib:shrunk");
             tracked[wantId] = new TrackedEffect
             {
                 Id = wantId,
@@ -191,7 +188,7 @@ namespace EffectLib
                 Endless = true,
                 ExpiryMs = long.MaxValue,
                 ChangeToken = sizeDelta,
-                ExtraLines = [$"{sizeDelta:+0.0#;-0.0#} blocks"],
+                ExtraLines = [Lang.Get("effectlib:size-blocks", sizeDelta.ToString("+0.0#;-0.0#"))],
             };
             changed = true;
         }
@@ -368,66 +365,30 @@ namespace EffectLib
                 return;
 
             List<string> lines = [];
-            string modCode = "potionmod-" + effect.Id;
+            string statCode = AppliedEffect.StatCode(effect.Id);
 
+            // Stats come from the entity, so they show what was actually applied.
             foreach (KeyValuePair<string, EntityFloatStats> stat in entity.Stats)
             {
-                if (!stat.Value.ValuesByKey.TryGetValue(modCode, out EntityStat<float> value))
+                if (!stat.Value.ValuesByKey.TryGetValue(statCode, out EntityStat<float> value))
                     continue;
 
                 if (stat.Key == "maxhealthExtraPoints")
                 {
                     float hp = (float)Math.Round(value.Value, MidpointRounding.AwayFromZero);
-                    lines.Add($"{Label(effect.Id, stat.Key)}: +{hp}");
+                    lines.Add($"{Label(stat.Key)}: +{hp}");
                 }
                 else
                 {
                     float percent = (float)
                         Math.Round(value.Value * 100, MidpointRounding.AwayFromZero);
-                    lines.Add($"{Label(effect.Id, stat.Key)}: {percent:+0;-0;0}%");
+                    lines.Add($"{Label(stat.Key)}: {percent:+0;-0;0}%");
                 }
             }
 
             EffectContext ctx = EffectRegistry.Build(effect.Id, effect.PotencyMul, effect.Source);
             if (ctx != null)
-            {
-                string healthTick = FormatHealthTick(effect.Id, ctx);
-                if (healthTick != null)
-                    lines.Add(healthTick);
-
-                if (ctx.GlowStrength > 0)
-                    lines.Add(Label(effect.Id, "glow"));
-                if (ctx.WaterBreathe)
-                    lines.Add(Label(effect.Id, "waterbreathe"));
-                if (ctx.ColdResist)
-                    lines.Add(Label(effect.Id, "coldresist"));
-                if (ctx.FallDamageReduction > 0)
-                    lines.Add(Label(effect.Id, "fall"));
-                if (ctx.CanClimbAnywhere)
-                    lines.Add(Label(effect.Id, "climb"));
-                if (ctx.CanFly)
-                    lines.Add(Label(effect.Id, "flight"));
-                if (ctx.NoGravity)
-                    lines.Add(Label(effect.Id, "nogravity"));
-                if (Math.Abs(ctx.KnockbackResistance) > float.Epsilon)
-                    lines.Add(
-                        $"{Label(effect.Id, "knockbackresist")}: {ctx.KnockbackResistance * 100:+0;-0;0}%"
-                    );
-                if (ctx.NoFallDamage)
-                    lines.Add(Label(effect.Id, "nofalldamage"));
-                if (ctx.DisableClimbing)
-                    lines.Add(Label(effect.Id, "noclimb"));
-                if (Math.Abs(ctx.ClimbTouchDistance) > float.Epsilon)
-                    lines.Add(
-                        $"{Label(effect.Id, "climbreach")}: {ctx.ClimbTouchDistance:+0.##;-0.##;0}"
-                    );
-                if (Math.Abs(ctx.Weight) > float.Epsilon)
-                    lines.Add($"{Label(effect.Id, "weight")}: {ctx.Weight:+0.#;-0.#;0}kg");
-                if (Math.Abs(ctx.SizeOffset) > float.Epsilon)
-                    lines.Add(
-                        $"{Label(effect.Id, ctx.SizeOffset > 0 ? "grow" : "shrink")}: {ctx.SizeOffset:+0.##;-0.##}"
-                    );
-            }
+                lines.AddRange(EffectDescription.EffectLines(ctx, withStats: false));
 
             if (effect.ExtraLines != null)
                 lines.AddRange(effect.ExtraLines);
@@ -435,17 +396,7 @@ namespace EffectLib
             effect.DetailLines = [.. lines];
         }
 
-        private static string Label(string effectId, string key) =>
-            EffectLang.GetIfExists(effectId, key) ?? key;
-
-        private static string FormatHealthTick(string effectId, EffectContext ctx)
-        {
-            if (ctx.TickSec <= 0 || Math.Abs(ctx.Health) <= float.Epsilon)
-                return null;
-
-            string label = Label(effectId, ctx.Health < 0 ? "poison" : "regen");
-            return $"{label}: {ctx.Health:+0.#;-0.#} HP / {ctx.TickSec:0.##}s";
-        }
+        private static string Label(string key) => Lang.GetIfExists("effectlib:" + key) ?? key;
 
         private static string DisplayName(TrackedEffect effect) =>
             string.IsNullOrEmpty(effect.Name) ? effect.Id : effect.Name;
@@ -466,11 +417,7 @@ namespace EffectLib
         {
             long now = ClientNowMs;
             StringBuilder sb = new();
-            string headerDomain =
-                ordered.Count > 0
-                    ? EffectRegistry.DomainOf(ordered[0].Id)
-                    : EffectRegistry.DefaultDomain;
-            sb.Append(EffectLang.GetForDomain(headerDomain, "effects-active"));
+            sb.Append(Lang.Get("effectlib:effects-active"));
             foreach (TrackedEffect effect in ordered)
             {
                 BuildDetails(effect);
@@ -655,10 +602,8 @@ namespace EffectLib
         }
 
 #pragma warning disable CA1816
-
         public override void Dispose()
 #pragma warning restore CA1816
-
         {
             if (timerListenerId != 0)
             {

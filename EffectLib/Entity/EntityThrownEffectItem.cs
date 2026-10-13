@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
-using Vintagestory.API.Datastructures;
 using Vintagestory.GameContent;
 
 #pragma warning disable IDE0130
@@ -74,19 +73,13 @@ namespace EffectLib
 
             ProjectileStack?.ResolveBlockOrItem(World);
             CollectibleObject collectible = ProjectileStack?.Collectible;
-            JsonObject def = collectible?.Attributes?[EffectInfoKey];
-            string effectId = EffectIds.Read(def, "effectId", collectible);
-
-            if (string.IsNullOrWhiteSpace(effectId))
+            if (!JsonEffectDefinition.TryResolve(collectible, EffectInfoKey, "effectId", out string effectId))
             {
                 Die(EnumDespawnReason.Death);
                 return;
             }
 
-            if (!EffectRegistry.IsRegistered(effectId, collectible.Code))
-                JsonEffectDefinition.RegisterFrom(effectId, collectible.Code.Domain, def, collectible.Code);
-
-            float radius = def["throwRadius"].AsFloat(3f);
+            float radius = collectible.Attributes[EffectInfoKey]["throwRadius"].AsFloat(3f);
             string displayName = EffectLang.NameFor(
                 effectId,
                 EffectRegistry.Build(effectId, 1f, collectible.Code)

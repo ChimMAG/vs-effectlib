@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Common;
-using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
 
 namespace EffectLib
 {
@@ -66,7 +66,12 @@ namespace EffectLib
 
                 string name = carry.DisplayName;
                 if (manager.TryApply(id, ctx, name) && ctx.Notify)
-                    EffectLang.SendGained(player, id, name);
+                    EffectLang.SendFor(
+                        player.Player as IServerPlayer,
+                        EffectRegistry.DomainOf(id),
+                        "effect-gain",
+                        name
+                    );
             }
 
             return true;
@@ -86,7 +91,8 @@ namespace EffectLib
                 if (carry.DurabilityDrainIntervalSec <= 0f || carry.DurabilityDrainAmount <= 0)
                     continue;
 
-                if (!manager.IsActive(carry.EffectId))
+                // Only the item whose definition is actually applied drains.
+                if (!manager.IsActive(carry.EffectId) || !Equals(manager.SourceOf(carry.EffectId), carry.Source))
                     continue;
 
                 float expected =
@@ -112,9 +118,16 @@ namespace EffectLib
         private static bool CanScan(EntityPlayer player, EffectManager manager) =>
             player?.Player?.InventoryManager != null && manager != null && player.Alive;
 
+        private enum SlotArea
+        {
+            Hotbar,
+            Backpack,
+            Worn,
+        }
+
         // One item per effect id: the qualifying copy with the highest order, ties going to the
-        // first found - checking the hands, then the rest of the hotbar, then the backpack. That
-        // copy's definition is applied, and it's the one that drains.
+        // first found - checking the hands, then the rest of the hotbar, the backpack, then worn
+        // gear. That copy's definition is applied, and it's the one that drains.
         private static List<(CollectibleBehaviorEffectCarry Carry, ItemSlot Slot)> ResolveGranting(
             EntityPlayer player
         )
@@ -122,20 +135,22 @@ namespace EffectLib
             IPlayerInventoryManager inventoryManager = player.Player.InventoryManager;
             IInventory hotbar = inventoryManager.GetHotbarInventory();
             IInventory backpack = inventoryManager.GetOwnInventory(GlobalConstants.backpackInvClassName);
+            IInventory worn = inventoryManager.GetOwnInventory(GlobalConstants.characterInvClassName);
 
             ItemSlot rightHand = player.RightHandItemSlot;
             ItemSlot leftHand = player.LeftHandItemSlot;
 
-            IEnumerable<(ItemSlot Slot, bool InHotbar)> slots = new[] { rightHand, leftHand }
+            IEnumerable<(ItemSlot Slot, SlotArea Area)> slots = new[] { rightHand, leftHand }
                 .Concat(hotbar?.Where(slot => slot != rightHand && slot != leftHand) ?? [])
-                .Select(slot => (slot, true))
-                .Concat(backpack?.Select(slot => (slot, false)) ?? []);
+                .Select(slot => (slot, SlotArea.Hotbar))
+                .Concat(backpack?.Select(slot => (slot, SlotArea.Backpack)) ?? [])
+                .Concat(worn?.Select(slot => (slot, SlotArea.Worn)) ?? []);
 
             // Ids kept in first-found order, so exclusivity groups still favour the hands.
             List<string> ids = [];
             Dictionary<string, (CollectibleBehaviorEffectCarry Carry, ItemSlot Slot)> best = [];
 
-            foreach ((ItemSlot slot, bool inHotbar) in slots)
+            foreach ((ItemSlot slot, SlotArea area) in slots)
             {
                 CollectibleObject collectible = slot?.Itemstack?.Collectible;
                 if (collectible == null)
@@ -145,7 +160,7 @@ namespace EffectLib
                     CollectibleBehaviorEffectCarry carry in collectible.CollectibleBehaviors.OfType<CollectibleBehaviorEffectCarry>()
                 )
                 {
-                    if (carry.EffectId == null || !Qualifies(carry, slot, inHotbar, rightHand, leftHand))
+                    if (carry.EffectId == null || !Qualifies(carry, slot, area, rightHand, leftHand))
                         continue;
 
                     if (!best.TryGetValue(carry.EffectId, out var current))
@@ -163,7 +178,7 @@ namespace EffectLib
         private static bool Qualifies(
             CollectibleBehaviorEffectCarry carry,
             ItemSlot slot,
-            bool inHotbar,
+            SlotArea area,
             ItemSlot rightHand,
             ItemSlot leftHand
         ) =>
@@ -171,8 +186,9 @@ namespace EffectLib
             && carry.Activation switch
             {
                 EnumCarryActivation.Inventory => true,
-                EnumCarryActivation.Hotbar => inHotbar,
+                EnumCarryActivation.Hotbar => area == SlotArea.Hotbar,
                 EnumCarryActivation.Held => IsHeld(carry, slot, rightHand, leftHand),
+                EnumCarryActivation.Worn => area == SlotArea.Worn,
                 _ => false,
             };
 

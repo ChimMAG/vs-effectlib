@@ -19,7 +19,7 @@ namespace EffectLib.CombatOverhaulCompatBridge
         // compile-time reference the other way (this project -> EffectLib.csproj) would recreate
         // the circular project dependency that used to break `dotnet clean`/`build`. Keep in sync
         // by hand with EffectLib.Coating.CoatedEffects.
-        private const string KeyEffectId = "coatedPotionId";
+        private const string KeyEffectId = "coatedEffectId";
         private const string KeyItemCode = "coatedItemCode";
         private const string KeyCharges = "coatCharges";
         private const string KeyMultiplier = "coatMultiplier";
@@ -36,22 +36,19 @@ namespace EffectLib.CombatOverhaulCompatBridge
         internal static System.Func<float> effectMultiplier;
         internal static System.Func<string, bool> isEffectCoatable;
         internal static System.Action<string, Entity, float, float, string, string> applyEffect;
-        internal static System.Func<string, string, object[], string> effectLangGet;
 
         public static void Init(
             ICoreAPI api,
             System.Func<bool> allowCoating,
             System.Func<float> effectMultiplier,
             System.Func<string, bool> isEffectCoatable,
-            System.Action<string, Entity, float, float, string, string> applyEffect,
-            System.Func<string, string, object[], string> effectLangGet
+            System.Action<string, Entity, float, float, string, string> applyEffect
         )
         {
             CompatEntry.allowCoating = allowCoating;
             CompatEntry.effectMultiplier = effectMultiplier;
             CompatEntry.isEffectCoatable = isEffectCoatable;
             CompatEntry.applyEffect = applyEffect;
-            CompatEntry.effectLangGet = effectLangGet;
 
             buffSystem =
                 api.ModLoader.GetModSystem<WeaponBuffSystem>()
@@ -235,16 +232,11 @@ namespace EffectLib.CombatOverhaulCompatBridge
 
             string itemCode = buff.Data.GetString("itemCode");
             string effectName = string.IsNullOrEmpty(itemCode) ? effectId : Lang.Get(itemCode);
-            context.Description.Append(string.Format("<font color=\"{0}\">", "#b8bb00"));
+            context.Description.Append("<font color=\"#b8bb00\">");
             context.Description.Append(
                 buff.Data.GetBool("isProjectile")
-                    ? CompatEntry.effectLangGet?.Invoke(effectId, "arrow-coated", [effectName])
-                        ?? effectName
-                    : CompatEntry.effectLangGet?.Invoke(
-                        effectId,
-                        "weapon-coated",
-                        [effectName, buff.UsesRemaining ?? 0]
-                    ) ?? effectName
+                    ? Lang.Get("effectlib:arrow-coated", effectName)
+                    : Lang.Get("effectlib:weapon-coated", effectName, buff.UsesRemaining ?? 0)
             );
             if (!(CompatEntry.isEffectCoatable?.Invoke(effectId) ?? true))
                 context.Description.Append(" (" + Lang.Get("effectlib:coating-disabled-suffix") + ")");
