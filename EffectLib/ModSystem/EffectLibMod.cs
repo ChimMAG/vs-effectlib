@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Vintagestory.API.Client;
@@ -67,16 +66,6 @@ namespace EffectLib
                 typeof(CollectibleBehaviorEffectCarry)
             );
 
-            api.RegisterCollectibleBehaviorClass("Coatable", typeof(CollectibleBehaviorCoatable));
-            api.RegisterCollectibleBehaviorClass(
-                "CoatSource",
-                typeof(CollectibleBehaviorCoatSource)
-            );
-            api.RegisterCollectibleBehaviorClass(
-                "CoatSourceLiquid",
-                typeof(CollectibleBehaviorCoatSourceLiquid)
-            );
-
             api.RegisterEntity("EntityThrownEffectItem", typeof(EntityThrownEffectItem));
 
             if (!Harmony.HasAnyPatches(HarmonyId))
@@ -85,36 +74,9 @@ namespace EffectLib
                 harmony.PatchAll(Assembly.GetExecutingAssembly());
             }
 
-            CoatingPolicy.Init(api);
-            CombatOverhaulCompat.Init(api);
-
             api.Network
                 .RegisterChannel(ConfigSyncChannelName)
                 .RegisterMessageType<EffectLibConfigSyncPacket>();
-        }
-
-        public override void AssetsFinalize(ICoreAPI api)
-        {
-            base.AssetsFinalize(api);
-
-            if (api.Side != EnumAppSide.Client)
-                return;
-
-            AttachCoatableBehaviors(api);
-        }
-
-        private static void AttachCoatableBehaviors(ICoreAPI api)
-        {
-            foreach (CollectibleObject obj in api.World.Collectibles)
-            {
-                if (obj?.Code == null || obj.CollectibleBehaviors.Any(b => b is CollectibleBehaviorCoatable))
-                    continue;
-
-                if (!CoatingPolicy.IsCoatableWeapon(obj) && !CoatingPolicy.IsCoatableProjectile(obj))
-                    continue;
-
-                obj.CollectibleBehaviors = [.. obj.CollectibleBehaviors, new CollectibleBehaviorCoatable(obj)];
-            }
         }
 
         public override void StartServerSide(ICoreServerAPI api)
@@ -145,11 +107,8 @@ namespace EffectLib
             api.Network
                 .GetChannel(ConfigSyncChannelName)
                 .SetMessageHandler<EffectLibConfigSyncPacket>(packet =>
-                {
-                    // Also invalidates CoatingPolicy's cached weapon tag set.
-                    EffectLibConfig.Loaded.ApplySyncPacket(packet);
-                    AttachCoatableBehaviors(api);
-                });
+                    EffectLibConfig.Loaded.ApplySyncPacket(packet)
+                );
 
             api.Event.LevelFinalize += () =>
             {
@@ -200,13 +159,11 @@ namespace EffectLib
                 sapi.Event.AfterActiveSlotChanged -= OnActiveSlotChanged;
                 sapi = null;
 
-                CoatedEffects.ClearPendingStatRemovals();
+                EntityEffects.ClearPendingStatRemovals();
             }
 
             harmony?.UnpatchAll(HarmonyId);
             harmony = null;
-
-            CombatOverhaulCompat.Shutdown();
 
             base.Dispose();
         }

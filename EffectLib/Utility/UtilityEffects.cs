@@ -301,7 +301,7 @@ namespace EffectLib
                 : min > EffectLibConfig.Loaded.MinPlayerHeight + 0.001f;
         }
 
-        // Shared reshape/recall/size block check - lang key or null. Used by direct consume and coating.
+        // Shared reshape/recall/size block check - lang key or null. Used by direct consume and EntityEffects.
         public static string GetBlockReason(EntityAgent byEntity, EffectContext ctx)
         {
             if (IsReshapeReentry(byEntity, ctx))

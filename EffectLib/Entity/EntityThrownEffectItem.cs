@@ -93,7 +93,7 @@ namespace EffectLib
                     e => e is EntityAgent && e.Alive
                 )
             )
-                CoatedEffects.Apply(effectId, target, 1f, displayName, collectible.Code);
+                EntityEffects.Apply(effectId, target, 1f, displayName, collectible.Code);
 
             Die(EnumDespawnReason.Death);
         }

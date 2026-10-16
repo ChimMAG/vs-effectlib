@@ -50,12 +50,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EffectLibCombatOverhaulCompat\EffectLibCombatOverhaulCompat.csproj"
-                      ReferenceOutputAssembly="false"
-                      OutputItemType="EmbeddedResource" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Content Include="..\resources\**" Exclude="..\resources\**\*~">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

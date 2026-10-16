@@ -22,11 +22,6 @@ namespace EffectLib
         public float MinPlayerHeight { get; set; } = UtilityEffects.DefaultMinHeight;
         public float MaxPlayerHeight { get; set; } = UtilityEffects.DefaultMaxHeight;
 
-        // Weapons are matched by vanilla item/block tags (comma-separated); arrows as of VS 1.22.7 have no
-        // reliable tag of their own, so projectiles are matched by wildcard item code instead.
-        public string CoatableWeaponTags { get; set; } = "weapon-melee";
-        public string CoatableProjectilesCodes { get; set; } = "*arrow*";
-
         // How long the hotbar/inventory must stay unchanged before carried items are re-checked.
         public float CarryScanDelaySec { get; set; } = 0.5f;
 
@@ -50,8 +45,6 @@ namespace EffectLib
             CarryDurabilityCheckIntervalSec = Math.Max(1f, CarryDurabilityCheckIntervalSec);
             MinPlayerHeight = Math.Max(0.05f, MinPlayerHeight);
             MaxPlayerHeight = Math.Max(MinPlayerHeight, MaxPlayerHeight);
-            CoatableWeaponTags ??= "";
-            CoatableProjectilesCodes ??= "";
         }
 
         public EffectLibConfigSyncPacket ToSyncPacket()
@@ -93,7 +86,6 @@ namespace EffectLib
             }
 
             Clamp();
-            CoatingPolicy.InvalidateCaches();
         }
     }
 }
