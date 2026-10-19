@@ -41,5 +41,15 @@ namespace EffectLib
         // player's language.
         public static void SendFor(IServerPlayer player, string domain, string key, params object[] args) =>
             Send(player, Key(domain, key, player?.LanguageCode), args);
+
+        // The gained message, or the stacked one once an intensity-stacking effect is past one stack.
+        public static void SendGain(IServerPlayer player, string effectId, string name, EffectContext ctx) =>
+            SendFor(
+                player,
+                EffectRegistry.DomainOf(effectId),
+                ctx?.Stacks > 1 ? "effect-stack" : "effect-gain",
+                name,
+                ctx?.Stacks ?? 1
+            );
     }
 }

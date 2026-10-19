@@ -61,25 +61,23 @@ namespace EffectLib
                 .. active.Select(pair => new ActiveEffectInfo(
                     pair.Key,
                     pair.Value.DisplayName,
-                    pair.Value.Effect.Context.IsEndless
-                        ? 0
-                        : Math.Max(
-                            0,
-                            pair.Value.Effect.Context.Duration
-                                - (int)((nowMs - pair.Value.ApplyMs) / 1000)
-                        ),
+                    pair.Value.Effect.Context.IsEndless ? 0 : RemainingSec(pair.Value, nowMs),
                     pair.Value.Effect.Context.PotencyMul,
-                    pair.Value.Effect.Context.IsEndless
+                    pair.Value.Effect.Context.IsEndless,
+                    pair.Value.Effect.Context.Stacks
                 )),
             ];
         }
+
+        // Whether TryApply would accept this id right now - false while it's active and can't refresh.
+        public bool CanApply(string id) => !(IsActive(id) || pendingInstant.Contains(id)) || CanRefresh(id);
 
         public bool CanRefresh(string id)
         {
             if (!active.TryGetValue(id, out ActiveEffect activeEffect))
                 return false;
 
-            if (activeEffect.Effect.Context.ReplaceIfActive)
+            if (activeEffect.Effect.Context.ReplaceIfActive || StacksOn(activeEffect.Effect.Context))
                 return true;
 
             return EffectPolicy.IsAllowed(EffectCapability.Refresh)
@@ -98,6 +96,9 @@ namespace EffectLib
                         return false;
                     }
 
+                    if (active.TryGetValue(id, out ActiveEffect previous) && StacksOn(ctx))
+                        StackOnto(previous, ctx);
+
                     RemoveEffect(id, false);
                 }
 
@@ -110,6 +111,9 @@ namespace EffectLib
                     )
                         RemoveEffect(otherId);
                 }
+
+                if (ctx.Duration == 0 && ctx.RepeatSec > 0f)
+                    ctx.Duration = EffectContext.EndlessDuration;
 
                 AppliedEffect effect = new(id, ctx);
                 effect.Apply(entity, resume);
@@ -124,24 +128,7 @@ namespace EffectLib
                     return true;
                 }
 
-                long tickListenerId = 0;
-                if (ctx.IsEndless && TicksHealth(ctx))
-                    tickListenerId = entity.World.RegisterGameTickListener(
-                        _ => effect.ApplyHealthTick(entity),
-                        (int)Math.Max(1, ctx.TickSec * 1000)
-                    );
-                else if (ctx.RepeatSec > 0)
-                    tickListenerId = entity.World.RegisterGameTickListener(
-                        _ => RepeatTick(id),
-                        (int)Math.Max(1, ctx.RepeatSec * 1000)
-                    );
-
-                long expiryCallbackId = ctx.IsEndless
-                    ? 0
-                    : entity.World.RegisterCallback(
-                        _ => RemoveEffect(id, notify: true, expired: true),
-                        (int)Math.Min(int.MaxValue, ctx.Duration * 1000L)
-                    );
+                (long tickListenerId, long expiryCallbackId) = RegisterTimers(id, effect);
 
                 active[id] = new ActiveEffect(effect, tickListenerId, expiryCallbackId, name)
                 {
@@ -158,6 +145,103 @@ namespace EffectLib
                 api.Logger.Error(err);
                 return false;
             }
+        }
+
+        private (long TickListenerId, long ExpiryCallbackId) RegisterTimers(string id, AppliedEffect effect)
+        {
+            EffectContext ctx = effect.Context;
+
+            long tickListenerId = 0;
+            if (ctx.IsEndless && TicksHealth(ctx))
+                tickListenerId = entity.World.RegisterGameTickListener(
+                    _ => effect.ApplyHealthTick(entity),
+                    (int)Math.Max(1, ctx.TickSec * 1000)
+                );
+            else if (ctx.RepeatSec > 0)
+                tickListenerId = entity.World.RegisterGameTickListener(
+                    _ => RepeatTick(id),
+                    (int)Math.Max(1, ctx.RepeatSec * 1000)
+                );
+
+            long expiryCallbackId = ctx.IsEndless
+                ? 0
+                : entity.World.RegisterCallback(
+                    _ => OnExpired(id),
+                    (int)Math.Min(int.MaxValue, ctx.Duration * 1000L)
+                );
+
+            return (tickListenerId, expiryCallbackId);
+        }
+
+        internal static bool StacksOn(EffectContext ctx) =>
+            ctx.Stacking != EnumEffectStacking.None && EffectPolicy.IsAllowed(EffectCapability.Stack);
+
+        // Carries the running effect's stacks or time left over into the incoming context.
+        private void StackOnto(ActiveEffect previous, EffectContext ctx)
+        {
+            EffectContext prevCtx = previous.Effect.Context;
+            switch (ctx.Stacking)
+            {
+                case EnumEffectStacking.Intensity:
+                    ctx.SetStacks(Math.Min(prevCtx.Stacks + 1, ctx.MaxStacks));
+                    break;
+
+                case EnumEffectStacking.Duration:
+                    if (ctx.Duration <= 0 || prevCtx.IsEndless)
+                        break;
+                    int total = RemainingSec(previous, entity.World.ElapsedMilliseconds) + ctx.Duration;
+                    ctx.Duration = ctx.MaxDurationSec > 0 ? Math.Min(total, ctx.MaxDurationSec) : total;
+                    break;
+            }
+        }
+
+        private static int RemainingSec(ActiveEffect activeEffect, long nowMs) =>
+            Math.Max(
+                0,
+                activeEffect.Effect.Context.Duration - (int)((nowMs - activeEffect.ApplyMs) / 1000)
+            );
+
+        private void OnExpired(string id)
+        {
+            if (
+                active.TryGetValue(id, out ActiveEffect activeEffect)
+                && activeEffect.Effect.Context is { Stacking: EnumEffectStacking.Intensity, StackDecay: EnumStackDecay.One, Stacks: > 1 }
+                && EffectPolicy.IsAllowed(EffectCapability.Stack)
+            )
+                DecayStack(id, activeEffect);
+            else
+                RemoveEffect(id, notify: true, expired: true);
+        }
+
+        // Drops one stack in place and restarts the timer - no handlers, and no instant health re-fire.
+        private void DecayStack(string id, ActiveEffect activeEffect)
+        {
+            AppliedEffect effect = activeEffect.Effect;
+            EffectContext ctx = effect.Context;
+
+            UnregisterTimers(activeEffect);
+            effect.Remove(entity, stopDamageOverTime: true);
+            ctx.SetStacks(ctx.Stacks - 1);
+            effect.Apply(entity, instantHealth: false);
+
+            (long tickListenerId, long expiryCallbackId) = RegisterTimers(id, effect);
+            active[id] = activeEffect with
+            {
+                TickListenerId = tickListenerId,
+                ExpiryCallbackId = expiryCallbackId,
+                ApplyMs = entity.World.ElapsedMilliseconds,
+            };
+            RefreshEffectState();
+            SaveEffectRecord(id, ctx, activeEffect.DisplayName);
+
+            if (ctx.Notify)
+                EffectLang.SendFor(
+                    entity.Player as IServerPlayer,
+                    EffectRegistry.DomainOf(id),
+                    "effect-stack",
+                    activeEffect.DisplayName,
+                    ctx.Stacks
+                );
         }
 
         public void RemoveEffect(string id, bool notify = true) => RemoveEffect(id, notify, expired: false);
@@ -213,16 +297,23 @@ namespace EffectLib
         private static bool TicksHealth(EffectContext ctx) =>
             ctx.TickSec > 0 && Math.Abs(ctx.Health) > float.Epsilon;
 
-        public void Purge(EffectPurge scope)
+        public void Purge(EffectPurge scope) => Purge(scope, null);
+
+        // exceptId survives the purge even when the scope covers it.
+        public void Purge(EffectPurge scope, string exceptId)
         {
             scope ??= EffectPurge.Everything;
 
-            foreach (string id in active.Keys.Where(scope.Covers).ToList())
+            foreach (
+                string id in active.Keys
+                    .Where(id => scope.Covers(id) && !string.Equals(id, exceptId, StringComparison.OrdinalIgnoreCase))
+                    .ToList()
+            )
             {
                 RemoveEffect(id);
             }
 
-            if (scope.IsEverything)
+            if (scope.IsEverything && exceptId == null)
             {
                 RemoveIfPresent(PersistKey);
                 pendingInstant.Clear();
@@ -241,7 +332,9 @@ namespace EffectLib
                     ? ctx.ResetDomains
                     : [EffectRegistry.DomainOf(effectId)];
 
-            Purge(new EffectPurge(domains, ctx.ResetEffectIds));
+            // A stacking effect's reset spares itself, so it doesn't wipe the stack it adds to.
+            string except = StacksOn(ctx) && IsActive(effectId) ? effectId : null;
+            Purge(new EffectPurge(domains, ctx.ResetEffectIds), except);
         }
 
         public void Suspend()
@@ -259,11 +352,7 @@ namespace EffectLib
 
                 int remainingSec = activeEffect.Effect.Context.IsEndless
                     ? EffectContext.EndlessDuration
-                    : Math.Max(
-                        activeEffect.Effect.Context.Duration
-                            - (int)((nowMs - activeEffect.ApplyMs) / 1000),
-                        1
-                    );
+                    : Math.Max(RemainingSec(activeEffect, nowMs), 1);
                 tree?.GetTreeAttribute(pair.Key)?.SetInt("remainingSec", remainingSec);
             }
 
@@ -324,10 +413,19 @@ namespace EffectLib
                         tree.RemoveAttribute(id);
                         continue;
                     }
+                    else if (ctx.Stacking == EnumEffectStacking.Duration)
+                    {
+                        // Stacked time can run past the definition's own duration.
+                        ctx.Duration = ctx.MaxDurationSec > 0 ? Math.Min(remainingSec, ctx.MaxDurationSec) : remainingSec;
+                    }
                     else
                     {
                         ctx.Duration = Math.Min(remainingSec, ctx.Duration);
                     }
+
+                    int stacks = record.GetInt("stacks", 1);
+                    if (stacks > 1)
+                        ctx.SetStacks(Math.Min(stacks, ctx.MaxStacks));
 
                     if (primitive)
                         RestoreRepeatShape(ctx, record);
@@ -581,6 +679,7 @@ namespace EffectLib
             ITreeAttribute record = tree.GetOrAddTreeAttribute(id);
             record.SetString("name", name ?? "");
             record.SetFloat("strengthMul", ctx.PotencyMul);
+            record.SetInt("stacks", ctx.Stacks);
             record.SetFloat("durationMul", ctx.DurationMul);
             record.SetInt("remainingSec", ctx.Duration);
             record.SetLong("appliedAt", entity.World.ElapsedMilliseconds);
@@ -627,7 +726,8 @@ namespace EffectLib
         string DisplayName,
         int RemainingSec,
         float PotencyMul,
-        bool Endless = false
+        bool Endless = false,
+        int Stacks = 1
     );
 
     internal sealed record ActiveEffect(

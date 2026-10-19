@@ -34,7 +34,7 @@ namespace EffectLib
             }
         }
 
-        public void Apply(EntityPlayer entity, bool resume = false)
+        public void Apply(EntityPlayer entity, bool resume = false, bool instantHealth = true)
         {
             foreach (KeyValuePair<string, float> stat in Context.StatModifiers)
             {
@@ -52,7 +52,7 @@ namespace EffectLib
 
             if (TicksHealth)
                 ApplyTimedHealth(entity);
-            else
+            else if (instantHealth)
                 ApplyHealth(entity);
         }
 

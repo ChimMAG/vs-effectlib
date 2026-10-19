@@ -21,6 +21,14 @@ namespace EffectLib
             if (ctx.Duration < 0)
                 ctx.Duration = EffectContext.EndlessDuration;
             ctx.RepeatSec = def["repeatSec"].AsFloat();
+            ctx.Chance = Math.Clamp(def["chance"].AsFloat(1f), 0f, 1f);
+
+            if (Enum.TryParse(def["stacking"].AsString(), true, out EnumEffectStacking stacking))
+                ctx.Stacking = stacking;
+            ctx.MaxStacks = Math.Max(1, def["maxStacks"].AsInt(EffectContext.DefaultMaxStacks));
+            if (Enum.TryParse(def["stackDecay"].AsString(), true, out EnumStackDecay decay))
+                ctx.StackDecay = decay;
+            ctx.MaxDurationSec = Math.Max(0, def["maxDurationSec"].AsInt());
 
             string[] resetDomains = def["resetDomains"].AsArray<string>(null);
             if (resetDomains != null)
@@ -163,6 +171,7 @@ namespace EffectLib
         {
             string[] channels = def["channels"].AsArray<string>(null);
             string exclusivityGroup = def["exclusivityGroup"].AsString();
+            bool hideHud = def["hideHud"].AsBool();
 
             string hudIcon = def["hudIcon"].AsString();
             AssetLocation iconTexture = string.IsNullOrWhiteSpace(hudIcon)
@@ -180,7 +189,8 @@ namespace EffectLib
                 iconSource,
                 channels,
                 exclusivityGroup,
-                iconTexture
+                iconTexture,
+                hideHud
             );
 
             // Build once now so definition problems (e.g. stats on an instant effect) are logged at

@@ -258,13 +258,16 @@ namespace EffectLib
                 );
 
             bool instant = primitive?.Instant == true && interval <= 0f;
+            int durationSec = instant ? 0 : (duration ?? DefaultDurationSec);
+            if (interval > 0f && durationSec == 0)
+                durationSec = EffectContext.EndlessDuration;
 
             return ApplyToTargets(
                 args,
                 playerArg,
                 effectId,
                 magnitude,
-                instant ? 0 : (duration ?? DefaultDurationSec),
+                durationSec,
                 interval > 0f ? $"{name} every {interval:0.##}s" : name,
                 repeatSec: interval
             );
@@ -393,6 +396,7 @@ namespace EffectLib
 
             int applied = 0;
             List<string> failed = [];
+            bool statsDropped = false;
 
             foreach (IServerPlayer target in targets)
             {
@@ -413,6 +417,12 @@ namespace EffectLib
                 if (repeatSec > 0f)
                     EffectPrimitives.MakeRepeating(ctx, repeatSec, damageType);
 
+                if (ctx.Duration == 0 && ctx.RepeatSec <= 0f && ctx.StatModifiers.Count > 0)
+                {
+                    ctx.StatModifiers.Clear();
+                    statsDropped = true;
+                }
+
                 if (ctx.ResetsEffects)
                     manager.PurgeFor(effectId, ctx);
 
@@ -432,6 +442,8 @@ namespace EffectLib
             string summary = $"Gave {label}{durationNote} to {applied} player(s).";
             if (failed.Count > 0)
                 summary += $" Failed for: {string.Join(", ", failed)}.";
+            if (statsDropped && applied > 0)
+                summary += " A 0 duration makes the effect instant, so its stat modifiers were dropped.";
 
             return applied > 0
                 ? TextCommandResult.Success(summary)
@@ -468,6 +480,8 @@ namespace EffectLib
                     .Append(info.Endless ? "endless" : FormatTime(info.RemainingSec) + " left");
                 if (Math.Abs(info.PotencyMul - 1f) > 0.001f)
                     sb.Append("  x").Append(info.PotencyMul.ToString("0.##"));
+                if (info.Stacks > 1)
+                    sb.Append("  [").Append(info.Stacks).Append(" stacks]");
             }
 
             return TextCommandResult.Success(sb.ToString());

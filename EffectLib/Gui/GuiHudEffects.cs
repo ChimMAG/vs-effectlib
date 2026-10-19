@@ -21,6 +21,7 @@ namespace EffectLib
             public long AppliedToken;
             public long ExpiryMs;
             public float PotencyMul;
+            public int Stacks = 1;
             public string[] ExtraLines;
             public float ChangeToken;
             public bool Synthetic;
@@ -116,19 +117,24 @@ namespace EffectLib
                     )
                         continue;
 
+                    AssetLocation source = record.HasAttribute("source")
+                        ? new AssetLocation(record.GetString("source"))
+                        : null;
+                    if (EffectRegistry.HideHudOf(pair.Key, source))
+                        continue;
+
                     int remainingSec = record.GetInt("remainingSec");
                     bool endless = remainingSec < 0;
                     tracked[pair.Key] = new TrackedEffect
                     {
                         Id = pair.Key,
                         Name = record.GetString("name", ""),
-                        Source = record.HasAttribute("source")
-                            ? new AssetLocation(record.GetString("source"))
-                            : null,
+                        Source = source,
                         AppliedToken = token,
                         Endless = endless,
                         ExpiryMs = endless ? long.MaxValue : ClientNowMs + remainingSec * 1000L,
                         PotencyMul = record.GetFloat("strengthMul", 1f),
+                        Stacks = record.GetInt("stacks", 1),
                     };
                     changed = true;
                 }
@@ -398,8 +404,11 @@ namespace EffectLib
 
         private static string Label(string key) => Lang.GetIfExists("effectlib:" + key) ?? key;
 
-        private static string DisplayName(TrackedEffect effect) =>
-            string.IsNullOrEmpty(effect.Name) ? effect.Id : effect.Name;
+        private static string DisplayName(TrackedEffect effect)
+        {
+            string name = string.IsNullOrEmpty(effect.Name) ? effect.Id : effect.Name;
+            return effect.Stacks > 1 ? $"{name} x{effect.Stacks}" : name;
+        }
 
         private static string BuildExpandedTooltip(TrackedEffect effect)
         {

@@ -287,7 +287,8 @@ namespace EffectLib
 
         // Blocks a grow/shrink effect once the player is already at that size limit.
         public static bool IsSizeAtLimit(EntityAgent byEntity, EffectContext ctx) =>
-            Math.Abs(ctx.SizeChange) > float.Epsilon
+            EffectPolicy.IsAllowed(EffectCapability.Resize)
+            && Math.Abs(ctx.SizeChange) > float.Epsilon
             && byEntity is EntityPlayer player
             && !CanApplySizeChange(player, ctx);
 

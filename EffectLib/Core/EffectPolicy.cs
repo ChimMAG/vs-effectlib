@@ -13,6 +13,8 @@ namespace EffectLib
         public const string Refresh = "refresh";
 
         public const string Resize = "resize";
+
+        public const string Stack = "stack";
     }
 
     public static class EffectPolicy
@@ -54,6 +56,7 @@ namespace EffectLib
                 EffectCapability.Fall => EffectLibConfig.Loaded.AllowFall,
                 EffectCapability.Refresh => EffectLibConfig.Loaded.AllowRefresh,
                 EffectCapability.Resize => EffectLibConfig.Loaded.AllowResize,
+                EffectCapability.Stack => EffectLibConfig.Loaded.AllowStacking,
                 _ => true,
             };
     }

@@ -80,10 +80,9 @@ namespace EffectLib
             }
 
             float radius = collectible.Attributes[EffectInfoKey]["throwRadius"].AsFloat(3f);
-            string displayName = EffectLang.NameFor(
-                effectId,
-                EffectRegistry.Build(effectId, 1f, collectible.Code)
-            );
+            EffectContext ctx = EffectRegistry.Build(effectId, 1f, collectible.Code);
+            string displayName = EffectLang.NameFor(effectId, ctx);
+            float chance = ctx?.Chance ?? 1f;
 
             foreach (
                 Entity target in World.GetEntitiesAround(
@@ -93,7 +92,11 @@ namespace EffectLib
                     e => e is EntityAgent && e.Alive
                 )
             )
+            {
+                if (chance < 1f && World.Rand.NextDouble() >= chance)
+                    continue;
                 EntityEffects.Apply(effectId, target, 1f, displayName, collectible.Code);
+            }
 
             Die(EnumDespawnReason.Death);
         }

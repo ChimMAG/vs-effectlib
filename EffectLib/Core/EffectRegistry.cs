@@ -15,7 +15,8 @@ namespace EffectLib
         AssetLocation IconSource = null,
         IReadOnlyCollection<string> Channels = null,
         string ExclusivityGroup = null,
-        AssetLocation IconTexture = null
+        AssetLocation IconTexture = null,
+        bool HideHud = false
     );
 
     public static class EffectRegistry
@@ -62,7 +63,8 @@ namespace EffectLib
             AssetLocation iconSource = null,
             IEnumerable<string> channels = null,
             string exclusivityGroup = null,
-            AssetLocation iconTexture = null
+            AssetLocation iconTexture = null,
+            bool hideHud = false
         )
         {
             if (string.IsNullOrWhiteSpace(effectId) || builder == null)
@@ -84,7 +86,8 @@ namespace EffectLib
                 iconSource,
                 channelSet is { Count: > 0 } ? channelSet : null,
                 string.IsNullOrWhiteSpace(exclusivityGroup) ? null : exclusivityGroup,
-                iconTexture
+                iconTexture,
+                hideHud
             );
 
             entries[effectId] = registration;
@@ -158,6 +161,10 @@ namespace EffectLib
 
         public static bool HasExplicitChannels(string effectId) =>
             Resolve(effectId)?.Channels is { Count: > 0 };
+
+        // Whether this effect's registration asked to stay off the effect HUD.
+        public static bool HideHudOf(string effectId, AssetLocation source = null) =>
+            Resolve(effectId, source)?.HideHud == true;
 
         public static string GroupOf(string effectId) => Resolve(effectId)?.ExclusivityGroup;
 

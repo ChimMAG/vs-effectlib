@@ -69,6 +69,8 @@ namespace EffectLib
         public int DurabilityDrainAmount { get; private set; } = 1;
 
         public bool RequiresToggle { get; private set; }
+        public bool OneShot { get; private set; }
+        public float RollCooldownSec { get; private set; } = -1f;
 
         private const string ToggleAttrKey = "effectlibCarryOn";
 
@@ -141,12 +143,14 @@ namespace EffectLib
             DurabilityDrainAmount = def["durabilityDrainAmount"].AsInt(1);
             RequiresToggle = def["toggle"].AsBool();
             Order = def["order"].AsInt();
+            OneShot = def["oneShot"].AsBool();
+            RollCooldownSec = def["rollCooldownSec"].AsFloat(-1f);
             bool notify = def["notify"].AsBool();
 
             EffectContext probe = new() { PotencyMul = 1f };
             JsonEffectDefinition.Apply(probe, def, collObj.Code.Domain);
             List<string> ignored = AdaptForCarry(probe);
-            if (ignored.Count > 0)
+            if (ignored.Count > 0 && !OneShot)
                 Api.Logger.Warning(
                     "[EffectLib] {0}'s '{1}' attribute sets {2}, which carried items ignore - they "
                         + "would re-fire every time the item is re-equipped.",
@@ -171,6 +175,9 @@ namespace EffectLib
                     ctx.Notify = notify;
                 }
             );
+
+            if (OneShot)
+                JsonEffectDefinition.RegisterFrom(declaredId, collObj.Code.Domain, def, collObj.Code);
         }
 
         // A size change lasts only while the item is carried. Other one-time effects would re-fire
@@ -209,6 +216,7 @@ namespace EffectLib
             Drop(ctx.Respawn, "respawn", () => ctx.Respawn = false);
             Drop(ctx.Reshape, "reshape", () => ctx.Reshape = false);
             Drop(ctx.ResetsEffects, "resetsEffects", () => ctx.ResetsEffects = false);
+            Drop(ctx.Stacking != EnumEffectStacking.None, "stacking", () => ctx.Stacking = EnumEffectStacking.None);
 
             return stripped;
         }
@@ -254,7 +262,9 @@ namespace EffectLib
         {
             base.GetHeldItemInfo(inSlot, dsc, world, withDebugInfo);
 
-            EffectContext ctx = EffectId == null ? null : EffectRegistry.Build(EffectId, 1f, Source);
+            EffectContext ctx = EffectId == null
+                ? null
+                : EffectRegistry.Build(OneShot ? DeclaredEffectId : EffectId, 1f, Source);
             if (ctx != null)
             {
                 dsc.AppendLine(Lang.Get(EffectLang.Key(Source.Domain, "carry-when-" + ActivationLangSuffix)));

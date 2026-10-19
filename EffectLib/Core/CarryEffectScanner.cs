@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
+using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
@@ -32,6 +33,11 @@ namespace EffectLib
     /// </summary>
     public static class CarryEffectScanner
     {
+        private const string OneShotGrantAttrKey = "effectlibOneShotGrantMs";
+        private const string CarryRollAttrKey = "effectlibCarryRoll";
+        private const string CarryWhereAttrKey = "effectlibCarryWhere";
+        private const string CarryRolledAttrKey = "effectlibCarryRolled";
+
         public static bool Scan(EntityPlayer player, EffectManager manager)
         {
             if (!CanScan(player, manager))
@@ -48,8 +54,14 @@ namespace EffectLib
                     manager.RemoveEffect(id);
             }
 
-            foreach ((CollectibleBehaviorEffectCarry carry, _) in granting)
+            foreach ((CollectibleBehaviorEffectCarry carry, ItemSlot slot) in granting)
             {
+                if (carry.OneShot)
+                {
+                    TryOneShotGrant(carry, slot, player, manager);
+                    continue;
+                }
+
                 string id = carry.EffectId;
                 bool active = manager.IsActive(id);
                 if (active && Equals(manager.SourceOf(id), carry.Source))
@@ -59,10 +71,14 @@ namespace EffectLib
                 if (ctx == null || manager.IsGroupBlocked(ctx.ExclusivityGroup, id))
                     continue;
 
-                // A different item (e.g. a higher-order upgrade) now provides this effect - swap
-                // its definition in.
                 if (active)
+                {
                     manager.RemoveEffect(id, notify: false);
+                }
+                else if (ctx.Chance < 1f && !RolledHit(slot, ctx.Chance, player))
+                {
+                    continue;
+                }
 
                 string name = carry.DisplayName;
                 if (manager.TryApply(id, ctx, name) && ctx.Notify)
@@ -75,6 +91,92 @@ namespace EffectLib
             }
 
             return true;
+        }
+
+        // One-shot carry grants fire once per roll cooldown under the bare declared id, so the
+        // scanner never revokes them - they survive the item being dropped. The attempt (hit or
+        // miss) is stamped on the item so the roll is once per cooldown, not once per scan.
+        private static void TryOneShotGrant(
+            CollectibleBehaviorEffectCarry carry,
+            ItemSlot slot,
+            EntityPlayer player,
+            EffectManager manager
+        )
+        {
+            string id = carry.DeclaredEffectId;
+            EffectContext ctx = EffectRegistry.Build(id, 1f, carry.Source);
+            if (ctx == null || manager.IsGroupBlocked(ctx.ExclusivityGroup, id))
+                return;
+
+            if (manager.IsActive(id) || !manager.CanApply(id))
+                return;
+
+            long nowMs = player.World.ElapsedMilliseconds;
+            long lastGrantMs = slot.Itemstack.Attributes?.GetLong(OneShotGrantAttrKey) ?? 0;
+
+            if (lastGrantMs > nowMs)
+                lastGrantMs = 0;
+
+            float cooldownSec = carry.RollCooldownSec >= 0f
+                ? carry.RollCooldownSec
+                : ctx.Duration > 0 ? ctx.Duration : 60f;
+            if (nowMs - lastGrantMs < (long)(cooldownSec * 1000f))
+                return;
+
+            slot.Itemstack.Attributes.SetLong(OneShotGrantAttrKey, nowMs);
+            slot.MarkDirty();
+
+            if (carry.DurabilityDrainIntervalSec > 0f && carry.DurabilityDrainAmount > 0)
+                slot.Itemstack.Collectible.DamageItem(
+                    player.World,
+                    player,
+                    slot,
+                    carry.DurabilityDrainAmount,
+                    destroyOnZeroDurability: carry.DestroyWhenBroken
+                );
+
+            if (ctx.Chance < 1f && player.World.Rand.NextDouble() >= ctx.Chance)
+                return;
+
+            string name = carry.DisplayName;
+            if (manager.TryApply(id, ctx, name) && ctx.Notify)
+                EffectLang.SendGain(player.Player as IServerPlayer, id, name, ctx);
+        }
+
+        // Passive carry chance is rolled once per equip: the roll is stamped on the item with the
+        // grant location, so repeated scans reuse it and only a move (equip/unequip/container
+        // change) re-rolls.
+        private static bool RolledHit(ItemSlot slot, float chance, EntityPlayer player)
+        {
+            ITreeAttribute attrs = slot.Itemstack.Attributes;
+            long where = WhereCode(slot, player);
+            if (attrs != null && attrs.GetBool(CarryRolledAttrKey) && attrs.GetLong(CarryWhereAttrKey) == where)
+                return attrs.GetFloat(CarryRollAttrKey) < chance;
+
+            float roll = (float)player.World.Rand.NextDouble();
+            if (attrs != null)
+            {
+                attrs.SetFloat(CarryRollAttrKey, roll);
+                attrs.SetLong(CarryWhereAttrKey, where);
+                attrs.SetBool(CarryRolledAttrKey, true);
+                slot.MarkDirty();
+            }
+            return roll < chance;
+        }
+
+        // Coarse grant location: hands, hotbar, backpack, worn - a move between these re-rolls.
+        private static long WhereCode(ItemSlot slot, EntityPlayer player)
+        {
+            if (slot == player.RightHandItemSlot)
+                return 1;
+            if (slot == player.LeftHandItemSlot)
+                return 2;
+            IPlayerInventoryManager inventoryManager = player.Player?.InventoryManager;
+            if (inventoryManager?.GetHotbarInventory()?.Any(s => s == slot) == true)
+                return 3;
+            if (inventoryManager?.GetOwnInventory(GlobalConstants.backpackInvClassName)?.Any(s => s == slot) == true)
+                return 4;
+            return 5;
         }
 
         // True if any item broke or was destroyed, so the caller can rescan straight away.

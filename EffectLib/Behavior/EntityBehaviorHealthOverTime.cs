@@ -18,6 +18,17 @@ namespace EffectLib
         private float durationAccum;
         private float durationSec;
 
+        private float baseDmgPerTick;
+        private bool decayOne;
+
+        public string EffectId { get; private set; }
+
+        public int Stacks { get; private set; } = 1;
+
+        public bool IsEndless => durationSec == EffectContext.EndlessDuration;
+
+        public float RemainingSec => done ? 0f : Math.Max(0f, durationSec - durationAccum);
+
         public override string PropertyName() => "effectlibHealthOverTime";
 
         public void Setup(
@@ -27,13 +38,8 @@ namespace EffectLib
             EnumDamageType damageType
         )
         {
-            this.dmgPerTick = dmgPerTick;
-            this.tickSec = tickSec;
-            this.durationSec = durationSec;
-            this.damageType = damageType;
+            Refresh(dmgPerTick, tickSec, durationSec, damageType);
             tickAccum = 0f;
-            durationAccum = 0f;
-            done = false;
         }
 
         public void Refresh(
@@ -47,8 +53,26 @@ namespace EffectLib
             this.tickSec = tickSec;
             this.durationSec = durationSec;
             this.damageType = damageType;
+            EffectId = null;
+            Stacks = 1;
+            baseDmgPerTick = dmgPerTick;
+            decayOne = false;
             durationAccum = 0f;
             done = false;
+        }
+
+        public void Apply(string effectId, EffectContext ctx)
+        {
+            bool continuing = !done && EffectId == effectId;
+            Refresh(ctx.Health, ctx.TickSec, ctx.Duration, ctx.ResolveDamageType());
+            if (!continuing)
+                tickAccum = 0f;
+
+            EffectId = effectId;
+            Stacks = ctx.Stacks;
+            baseDmgPerTick = ctx.Health / ctx.Stacks;
+            decayOne =
+                ctx.Stacking == EnumEffectStacking.Intensity && ctx.StackDecay == EnumStackDecay.One;
         }
 
         public override void OnGameTick(float dt)
@@ -57,8 +81,16 @@ namespace EffectLib
                 return;
 
             durationAccum += dt;
-            if (durationAccum >= durationSec)
+            if (durationSec != EffectContext.EndlessDuration && durationAccum >= durationSec)
             {
+                if (decayOne && Stacks > 1 && EffectPolicy.IsAllowed(EffectCapability.Stack))
+                {
+                    Stacks--;
+                    dmgPerTick = baseDmgPerTick * Stacks;
+                    durationAccum = 0f;
+                    return;
+                }
+
                 done = true;
                 entity.World.RegisterCallback(_ => entity.RemoveBehavior(this), 1);
                 return;

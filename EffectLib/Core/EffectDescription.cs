@@ -84,6 +84,16 @@ namespace EffectLib
                 yield return Lang.Get("effectlib:duration-endless");
             else if (ctx.Duration > 0)
                 yield return Lang.Get("effectlib:duration", ctx.Duration);
+
+            if (ctx.Chance < 1f)
+                yield return Lang.Get("effectlib:chance", $"{ctx.Chance * 100:0.#}");
+
+            if (ctx.Stacking == EnumEffectStacking.Intensity && ctx.MaxStacks > 1)
+                yield return Lang.Get("effectlib:stacks-max", ctx.MaxStacks);
+            else if (ctx.Stacking == EnumEffectStacking.Duration && ctx.Duration > 0)
+                yield return ctx.MaxDurationSec > 0
+                    ? Lang.Get("effectlib:stacks-duration-max", ctx.MaxDurationSec)
+                    : Lang.Get("effectlib:stacks-duration");
         }
 
         // A plain list of what the effect does, e.g. "Cold resistance, Glowing aura" - null if it

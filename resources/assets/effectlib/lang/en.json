@@ -13,6 +13,7 @@
   "effect-size-at-min": "You cannot shrink any further with this effect",
 
   "effect-gain": "You feel the effects of the {0}",
+  "effect-stack": "The effects of the {0} are now at x{1}",
   "carry-toggled-on": "You activate the {0}",
   "carry-toggled-off": "You deactivate the {0}",
   "carry-toggle-state-on": "Currently: On",
@@ -57,6 +58,10 @@
   "purge": "Clears other effects",
   "duration": "Duration: {0}s",
   "duration-endless": "Duration: until death",
+  "chance": "{0}% chance to take effect",
+  "stacks-max": "Stacks up to {0} times",
+  "stacks-duration": "Using it again adds to the time left",
+  "stacks-duration-max": "Using it again adds to the time left, up to {0}s",
 
   "maxhealthExtraPoints": "Extra health points",
   "walkspeed": "Walk speed",
@@ -101,5 +106,7 @@
   "AllowRefresh": "Allow effect refreshing",
   "AllowRefresh-Comment": "Globally allows or blocks re-applying (refreshing) an already-active effect for any effect that doesn't set its own replaceIfActive. An effect with replaceIfActive set always refreshes regardless of this setting.",
   "AllowResize": "Allow size-changing effects",
-  "AllowResize-Comment": "Globally allows or blocks any effect that grows or shrinks a player, regardless of what the effect's own JSON asks for."
+  "AllowResize-Comment": "Globally allows or blocks any effect that grows or shrinks a player, regardless of what the effect's own JSON asks for.",
+  "AllowStacking": "Allow effect stacking",
+  "AllowStacking-Comment": "Globally allows or blocks effects that opt into stacking (stacking: intensity or duration). When off, re-applying a stacking effect behaves like any other effect and simply refreshes it."
 }

@@ -4,9 +4,23 @@ using Vintagestory.API.Common;
 
 namespace EffectLib
 {
+    public enum EnumEffectStacking
+    {
+        None,
+        Intensity,
+        Duration,
+    }
+
+    public enum EnumStackDecay
+    {
+        All,
+        One,
+    }
+
     public sealed class EffectContext
     {
         public const int EndlessDuration = -1;
+        public const int DefaultMaxStacks = 5;
 
         public Dictionary<string, float> StatModifiers { get; } = [];
 
@@ -38,6 +52,51 @@ namespace EffectLib
         public float TickSec { get; set; }
 
         public float RepeatSec { get; set; }
+        public float Chance { get; set; } = 1f;
+        public EnumEffectStacking Stacking { get; set; }
+        public int MaxStacks { get; set; } = DefaultMaxStacks;
+        public EnumStackDecay StackDecay { get; set; }
+        public int MaxDurationSec { get; set; }
+
+        public int Stacks { get; private set; } = 1;
+
+        private StackBase stackBase;
+
+        private sealed record StackBase(
+            Dictionary<string, float> Stats,
+            float Health,
+            float KnockbackResistance,
+            float FallDamageReduction,
+            float Weight,
+            float TemporalStabilityGain,
+            float RetainedNutrition
+        );
+
+        // Scales the numeric strength of the effect to n stacks of its unscaled values. Flags,
+        // glow, size, climb distance and duration are left alone.
+        public void SetStacks(int n)
+        {
+            n = Math.Max(1, n);
+            stackBase ??= new StackBase(
+                new Dictionary<string, float>(StatModifiers),
+                Health,
+                KnockbackResistance,
+                FallDamageReduction,
+                Weight,
+                TemporalStabilityGain,
+                RetainedNutrition
+            );
+
+            Stacks = n;
+            foreach (KeyValuePair<string, float> stat in stackBase.Stats)
+                StatModifiers[stat.Key] = stat.Value * n;
+            Health = stackBase.Health * n;
+            KnockbackResistance = stackBase.KnockbackResistance * n;
+            FallDamageReduction = stackBase.FallDamageReduction * n;
+            Weight = stackBase.Weight * n;
+            TemporalStabilityGain = stackBase.TemporalStabilityGain * n;
+            RetainedNutrition = stackBase.RetainedNutrition * n;
+        }
 
         public EnumDamageType? DamageType { get; set; }
 

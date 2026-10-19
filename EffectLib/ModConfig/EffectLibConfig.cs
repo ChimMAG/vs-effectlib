@@ -36,6 +36,7 @@ namespace EffectLib
         public bool AllowFall { get; set; } = true;
         public bool AllowRefresh { get; set; } = true;
         public bool AllowResize { get; set; } = true;
+        public bool AllowStacking { get; set; } = true;
 
         // A hand-edited file can hold values the ConfigLib ranges would never allow so I clamp everything
         public void Clamp()

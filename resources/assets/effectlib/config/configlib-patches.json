@@ -94,6 +94,13 @@
         "weight": 1.9,
         "comment": "effectlib:AllowResize-Comment",
         "default": true
+      },
+      "ALLOWSTACKING": {
+        "name": "AllowStacking",
+        "ingui": "effectlib:AllowStacking",
+        "weight": 2.0,
+        "comment": "effectlib:AllowStacking-Comment",
+        "default": true
       }
     }
   }

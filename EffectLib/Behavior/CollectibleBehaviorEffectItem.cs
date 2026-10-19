@@ -132,15 +132,19 @@ namespace EffectLib
                 return false;
 
             if (ctx.Notify)
-                EffectLang.SendFor(
-                    player.Player as IServerPlayer,
-                    EffectRegistry.DomainOf(effectId),
-                    "effect-gain",
-                    name
-                );
+                EffectLang.SendGain(player.Player as IServerPlayer, effectId, name, ctx);
 
             return true;
         }
+
+        protected virtual bool CanApplyEffect(
+            ItemSlot slot,
+            EntityAgent byEntity,
+            string effectId,
+            EffectContext ctx
+        ) =>
+            byEntity is EntityPlayer player
+            && EntityBehaviorPlayerEffects.ManagerFor(player)?.CanApply(effectId) == true;
 
         protected virtual void OnConsumed(ItemSlot slot, EntityAgent byEntity)
         {
@@ -370,6 +374,15 @@ namespace EffectLib
             if (blockReason != null)
             {
                 DenyUse(byEntity, blockReason);
+                return;
+            }
+
+            if (ctx.Chance < 1f && byEntity.World.Rand.NextDouble() >= ctx.Chance)
+            {
+                if (CanApplyEffect(slot, byEntity, effectId, ctx))
+                    OnConsumed(slot, byEntity);
+                else
+                    DenyUse(byEntity, null);
                 return;
             }
 
