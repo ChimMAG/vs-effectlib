@@ -1,0 +1,132 @@
+// EffectLib: LIQUID (drink the liquid out of a container to get the effect)
+// Two parts, going in two different files:
+//   PART 1 "behaviors"  -> your liquid container block (bowl, jug, flask...)
+//   PART 2 "attributes" -> the liquid itself (the portion item that goes inside the container)
+// Any liquid with an "effectinfo" works in any container that has these behaviors.
+// Everything is optional except effectId and the EffectLiquid behavior. Comment out (//) the lines you don't want.
+ 
+  // ---- PART 1: on the liquid container block ----
+  "behaviors": [
+    {
+      "name": "EffectLiquid",
+      "properties": {
+        "consumeTime": 1.5,                    // Seconds to hold right-click. 0 = instant
+        "consumeLitres": 0.25,                 // Litres drunk per use
+        "checkLitres": 0.25,                   // Minimum litres needed to be able to drink (Usually leave blank or -0.01 than consumeLitres just in case of rounding errors)
+        "animation": "drink",                  // e.g. "eat", "drink". Uses AnimationManager so it should take any animation set to the entity
+                                               // but I haven't tested it with many animations other than eat and drink 
+
+        "sound": "game:sounds/player/drink",   // e.g. "game:sounds/player/eat". Uses Entity so again it should take any sound
+                                               // but again I have only really used it on eat or drink sounds so far
+
+        "attributeKey": "effectinfo",          // Advanced: which attribute ON THE LIQUID holds the effect definition. Default "effectinfo".
+                                               // Every liquid drunk from this container must use the same key
+        "idField": "effectId"                  // Advanced: which field inside that attribute holds the effect id. Default "effectId"
+      }
+    }
+  ],
+
+  // ---- PART 2: on the liquid (portion) item ----
+  "attributes": {
+    "effectinfo": {
+      // ---- Identity ----
+      "effectId": "myeffect",                  // REQUIRED. Items with the same id share one effect and never stack (unless "stacking" is set). Most items should have different ids but you should share
+                                               // ids if you want upgrades for an item to make sure they never stack
+      "hudIcon": "mymod:textures/hud/myeffect.png", // HUD icon. Default: the item's own icon. I would personally leave this line commented out unless you wanna start making
+                                               // a hud icon for every item
+      "hideHud": true,                         // Keep this effect off the HUD (no icon or timer). Chat messages still show
+      "notify": false,                         // (default true) Set false for no chat messages when the effect starts, loses a stack or wears off
+
+      // ---- Timing ----
+      "duration": 120,                         // Seconds. -1 = until death. 0/unset = instant: only health + one-time actions (stats and certain utitlies need a duration).
+      "repeatSec": 30,                         // Re-run the one-time actions every N seconds while active
+                                               // Note: I haven't done much testing on -1 duration setting and repeatSec
+                                               // They are both new to effectlib so let me know if it needs improvements or bug fixing
+      "chance": 0.5,                           // 0-1 chance the effect applies when drunk. Default 1 = always. A miss still uses up the liquid
+
+      // ---- Stacking and clearing ----
+      "replaceIfActive": true,                 // Can reuse while effect is already active to restart it, even if the server turned global refreshing off
+      "stacking": "intensity",                 // Re-using while active adds to the effect instead of restarting it. Server config can fully disable this feature (AllowStacking)
+                                               // "intensity": each use adds a stack, and every value in "stats" is multiplied by the stack count
+                                               // (e.g. "walkspeed": 0.2 at 3 stacks = +60%). health, knockbackResistance, fallDamageReduction, weight,
+                                               // temporalStabilityGain and retainedNutrition multiply the same way. Abilities, glow, size (size already stacks) and duration don't
+                                               // "duration": each use adds its duration to the time left instead. Stats and everything else stay the same
+      "maxStacks": 5,                          // (intensity) Most stacks allowed. Default 5. Keep it low, it can get quite large quite quickly
+      "stackDecay": "one",                     // (intensity) When the timer runs out: "all" (default) ends the effect, "one" drops one stack and restarts the timer
+      "maxDurationSec": 600,                   // (duration) Cap on the stacked time left, in seconds. 0/unset = no cap
+      "exclusivityGroup": "elixirs",           // Only one effect per group at a time. A new one replaces the old. This is used to make sure players
+                                               // can't just use every effect together making them a god.
+      "resetsEffects": true,                   // Clear other active effects before applying...
+      "resetDomains": ["mymod"],               // ...from these mods ("*" = everything). Default: this effect's own mod
+      "resetEffectIds": ["othermod:someeffect"], // ...plus these specific effects
+      "channels": ["drink", "throw", "coat"],  // Currently only for the Alchemy mod without some code. It declares which ways a potion can be used without ripping out the
+                                               // behaviour. This will probably be changed in the future
+
+      // ---- Stats: 0.2 = +20%, -0.2 = -20%. With "stacking": "intensity" these are multiplied by the stack count ----
+      "stats": {
+        "walkspeed": 0.2,
+        "hungerrate": -0.2,
+        "maxhealthExtraPoints": 0.25,          // Fraction of max health, 0.25 = +25% max HP
+        "healingeffectivness": 0.2,            // Spelled like this in vanilla
+        "rangedWeaponsAcc": 0.2,
+        "rangedWeaponsSpeed": 0.2,
+        "rangedWeaponsDamage": 0.2,
+        "meleeWeaponsDamage": 0.2,
+        "mechanicalsDamage": 0.2,              // Damage against mechanical enemies
+        "bowDrawingStrength": 0.2,
+        "miningSpeedMul": 0.2,
+        "oreDropRate": 0.2,
+        "forageDropRate": 0.2,
+        "wildCropDropRate": 0.2,
+        "animalLootDropRate": 0.2,
+        "animalSeekingRange": -0.2,            // Negative = animals notice you from less far away
+        "animalHarvestingTime": -0.2,          // Negative = faster
+        "vesselContentsDropRate": 0.2,
+        "wholeVesselLootChance": 0.2,
+        "rustyGearDropRate": 0.2,
+        "armorDurabilityLoss": -0.2,           // Negative = armor wears out slower
+        "temporalGearTLRepairCost": -0.2       // Negative = cheaper translocator repairs
+        // This list probably could be expanded, if another mod creates new stats I would assume this would still work the same but at this point in time I don't think I will
+        // expand this list as it is just vanilla stats at the moment. It would probably require a lot of harmony patching and could get quite complicated with other mods.
+      },
+
+      // ---- Health ----
+      "health": 2,                             // HP. Positive heals, negative hurts. On its own: applied once
+      "tickSec": 5,                            // With health: apply it every N seconds for the whole duration instead
+      "damageType": "Poison",                  // Default: Heal if positive, Poison if negative.
+                                               // It takes the types from this enum from vintagestory EnumDamageType
+                                               // Also: Fire, Frost, Heat, Acid, Electricity, Suffocation, Hunger, Injury,
+                                               // Gravity, Crushing, BluntAttack, SlashingAttack, PiercingAttack
+
+      // ---- Abilities (last for the duration) ----
+      "glowStrength": 12,                      // Give off light, 0-31. The strongest active glow wins
+      "waterBreathe": true,                    // Breathe underwater
+      "coldResist": true,                      // Immune to cold damage by setting the player's temp to normal while active. (I don't think it stops frost damage)
+      "canFly": true,                          // Fly freely. Server config can fully disable this feature (AllowFly)
+      "noGravity": true,                       // Float, unaffected by gravity, this one is sorta strange. I wouldn't reccommend it but give it a try if you want.
+                                               // Server config can fully disable this feature (AllowFly)
+      "canClimbAnywhere": true,                // Climb any wall. Server config can fully disable this feature (AllowClimb)
+      "disableClimbing": true,                 // Can't climb at all
+      "climbTouchDistance": 0.5,               // Extra climbing reach in blocks. Server config can fully disable this feature (AllowClimb)
+      "noFallDamage": true,                    // No fall damage. Server config can fully disable this feature (AllowFall)
+      "fallDamageReduction": 0.5,              // Cut fall damage, 0-1 (0.5 = half). Server config can fully disable this feature (AllowFall)
+      "knockbackResistance": 0.5,              // Added to knockback resistance
+      "weight": -20,                           // Kg added to body weight (I never really looked into what this actually does)
+
+      // ---- One-time actions (happen once when used) ----
+      "sizeChange": 0.4,                       // Grow (+) or shrink (-) height by N blocks. Lasts until death or a reset.
+                                               // Server config can fully disable this feature (AllowResize)
+      "sizeMinHeight": 0.8,                    // This effect can't shrink you below this height (blocks)
+      "sizeMaxHeight": 2.5,                    // This effect can't grow you above this height (blocks). Server limits always apply. Best to leave these as default
+                                               // by commentting them out but if you want players to not get too large or small via this alone item then its great to use
+      "retainedNutrition": 0.5,                // Pool all 5 food groups, keep this fraction, split it evenly between them
+      "temporalStabilityGain": 0.3,            // +0.3 = +30% temporal stability
+      "respawn": true,                         // Teleport to your spawn point
+      "blockRecallOnVessel": true,             // (default true) Can't teleport while in a boat. HIGHLY RECOMMENDED TO LEAVE THIS ALONE but you can change it if you want
+      "blockRecallOnMount": false,             // (default false) Can't teleport while riding an animal
+      "reshape": true,                         // Lets you reopen character creation once with .charsel
+      "blockReshapeReentry": true              // (default true) Can't use again until .charsel has been used. Turn off if the item is meant for multiple effects and
+                                               // not just charsel ability
+    }
+  }
+ 

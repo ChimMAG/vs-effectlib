@@ -1,0 +1,104 @@
+// EffectLib: CARRIED ITEM (effect while the item is in your inventory or specified location)
+// Merge "behaviors" and "attributes" into your item's JSON.
+// Everything is optional except effectId and activation. Comment out (//) the lines you don't want.
+// Carried effects last as long as the item stays in inventory or specified location - there is no duration (unless "oneShot" is set).
+// Not allowed here (ignored with a log warning): one-time actions (respawn, reshape, retainedNutrition,
+// temporalStabilityGain), resetsEffects, stacking, and health without tickSec. "oneShot" items allow all of these.
+
+  "behaviors": [
+    {
+      "name": "EffectCarry",
+      "properties": {
+        "attributeKey": "effectinfo",          // Advanced: which attribute holds the effect definition. Default "effectinfo". Change it to give one item two
+                                               // effect behaviors with separate definitions, e.g. EffectItem reads "effectinfo" and EffectCarry reads "carryinfo"
+        "idField": "effectId"                  // Advanced: which field inside that attribute holds the effect id. Default "effectId"
+      }
+    }
+  ],
+
+  "attributes": {
+    "effectinfo": {
+      // ---- Identity ----
+      "effectId": "myeffect",                  // REQUIRED. Items with the same id share one effect and never stack. Most items should have different ids but you should share
+                                               // ids if you want upgrades for an item to make sure they never stack (see "order" below)
+      "hudIcon": "mymod:textures/hud/myeffect.png", // HUD icon. Default: the item's own icon. I would personally leave this line commented out unless you wanna start making
+                                               // a hud icon for every item
+      "hideHud": true,                         // (default false) Keep this effect off the HUD. Chat messages still show
+      "activation": "held",                    // REQUIRED. "held", "hotbar", "inventory" or "worn" (in a clothing/armor slot)
+      "hand": "either",                        // "main", "off", "either" (default) or "both" (the same item in both hands)
+
+      // ---- Carry options ----
+      "toggle": true,                          // Right-click while holding it to switch on/off. It only works while on
+      "notify": true,                          // Chat message when the effect switches on or off. Default false (true with "oneShot")
+      "chance": 0.5,                           // 0-1 chance the effect applies. Default 1 = always. Rolled once and saved on the item, so it only re-rolls
+                                               // when the item moves between main hand, off hand, hotbar, backpack and worn. "oneShot" rolls every attempt
+      "order": 1,                              // Several items with the same effectId: only the highest order applies
+      "exclusivityGroup": "rings",             // Only one effect per group at a time. Items in hand win, then hotbar, then backpack, then worn. This is used to make sure players
+                                               // can't just use every effect together making them a god.
+      "allowWhenBroken": false,                // Keep working at 0 durability
+      "durabilityDrainIntervalSec": 60,        // Lose durability every N seconds while the effect is on (item needs durability)
+      "durabilityDrainAmount": 1,              // Durability lost each interval. Default 1
+                                               // With "oneShot": loses this amount once per attempt (hit or miss) instead. The interval still has to be set
+      "destroyWhenBroken": false,              // Drained to 0: destroy the item instead of leaving it broken
+
+      // ---- One-shot (fire once when picked up instead of a passive effect) ----
+      "oneShot": true,                         // The effect fires once when the item starts counting as carried, then works like a consumed effect:
+                                               // it uses "duration", stays after the item is dropped, and is kept on relog
+      "rollCooldownSec": 300,                  // (oneShot) Seconds between attempts. Default: the effect's duration (60 for instant or -1 duration effects).
+                                               // It never fires again while the last one is still active, so "stacking" won't build up from the item
+
+      // ---- Stats: 0.2 = +20%, -0.2 = -20% ----
+      "stats": {
+        "walkspeed": 0.2,
+        "hungerrate": -0.2,
+        "maxhealthExtraPoints": 0.25,          // Fraction of max health, 0.25 = +25% max HP
+        "healingeffectivness": 0.2,            // Spelled like this in vanilla
+        "rangedWeaponsAcc": 0.2,
+        "rangedWeaponsSpeed": 0.2,
+        "rangedWeaponsDamage": 0.2,
+        "meleeWeaponsDamage": 0.2,
+        "mechanicalsDamage": 0.2,              // Damage against mechanical enemies
+        "bowDrawingStrength": 0.2,
+        "miningSpeedMul": 0.2,
+        "oreDropRate": 0.2,
+        "forageDropRate": 0.2,
+        "wildCropDropRate": 0.2,
+        "animalLootDropRate": 0.2,
+        "animalSeekingRange": -0.2,            // Negative = animals notice you from less far away
+        "animalHarvestingTime": -0.2,          // Negative = faster
+        "vesselContentsDropRate": 0.2,
+        "wholeVesselLootChance": 0.2,
+        "rustyGearDropRate": 0.2,
+        "armorDurabilityLoss": -0.2,           // Negative = armor wears out slower
+        "temporalGearTLRepairCost": -0.2       // Negative = cheaper translocator repairs
+        // This list probably could be expanded, if another mod creates new stats I would assume this would still work the same but at this point in time I don't think I will
+        // expand this list as it is just vanilla stats at the moment. It would probably require a lot of harmony patching and could get quite complicated with other mods.
+      },
+
+      // ---- Health (needs tickSec on carried items) ----
+      "health": 1,                             // HP per tick. Positive heals, negative hurts
+      "tickSec": 10,                           // Apply 'health' every N seconds while carried
+      "damageType": "Heal",                    // Default: Heal if positive, Poison if negative.
+                                               // It takes the types from this enum from vintagestory EnumDamageType
+                                               // Also: Fire, Frost, Heat, Acid, Electricity, Suffocation, Hunger, Injury,
+                                               // Gravity, Crushing, BluntAttack, SlashingAttack, PiercingAttack
+
+      // ---- Abilities ----
+      "glowStrength": 12,                      // Give off light, 0-31. The strongest active glow wins
+      "waterBreathe": true,                    // Breathe underwater
+      "coldResist": true,                      // Immune to cold damage by setting the player's temp to normal while active. (I don't think it stops frost damage)
+      "canFly": true,                          // Fly freely. Server config can fully disable this feature (AllowFly)
+      "noGravity": true,                       // Float, unaffected by gravity, this one is sorta strange. I wouldn't reccommend it but give it a try if you want.
+                                               // Server config can fully disable this feature (AllowFly)
+      "canClimbAnywhere": true,                // Climb any wall. Server config can fully disable this feature (AllowClimb)
+      "disableClimbing": true,                 // Can't climb at all
+      "climbTouchDistance": 0.5,               // Extra climbing reach in blocks. Server config can fully disable this feature (AllowClimb)
+      "noFallDamage": true,                    // No fall damage. Server config can fully disable this feature (AllowFall)
+      "fallDamageReduction": 0.5,              // Cut fall damage, 0-1 (0.5 = half). Server config can fully disable this feature (AllowFall)
+      "knockbackResistance": 0.5,              // Added to knockback resistance
+      "weight": -20,                           // Kg added to body weight (I never really looked into what this actually does)
+      "sizeChange": 0.4                        // Grow (+) or shrink (-) height by N blocks while carried. With "oneShot" it lasts until death or a reset instead.
+                                               // Server config can fully disable this feature (AllowResize)
+    }
+  }
+ 

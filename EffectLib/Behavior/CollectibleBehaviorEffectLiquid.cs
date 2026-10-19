@@ -15,6 +15,7 @@ namespace EffectLib
         public override void Initialize(JsonObject properties)
         {
             base.Initialize(properties);
+            animation = properties["animation"].AsString("drink");
             sound = properties["sound"].AsString("drink");
             consumeLitres = properties["consumeLitres"].AsFloat(0.25f);
             checkLitres = properties["checkLitres"].AsFloat(0.25f);

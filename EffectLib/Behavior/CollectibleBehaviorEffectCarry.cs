@@ -50,7 +50,10 @@ namespace EffectLib
         public string DeclaredEffectId { get; private set; }
 
         public string DisplayName =>
-            EffectLang.NameFor(DeclaredEffectId, EffectRegistry.Build(EffectId, 1f, Source));
+            EffectLang.NameFor(
+                DeclaredEffectId,
+                EffectRegistry.Build(OneShot ? DeclaredEffectId : EffectId, 1f, Source)
+            );
 
         public AssetLocation Source => collObj.Code;
 
