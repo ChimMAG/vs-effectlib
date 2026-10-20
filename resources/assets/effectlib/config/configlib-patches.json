@@ -98,7 +98,7 @@
       "ALLOWSTACKING": {
         "name": "AllowStacking",
         "ingui": "effectlib:AllowStacking",
-        "weight": 2.0,
+        "weight": 1.95,
         "comment": "effectlib:AllowStacking-Comment",
         "default": true
       }
